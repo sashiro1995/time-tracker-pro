@@ -1,6 +1,6 @@
 # Time Tracker Pro
 
-A desktop app for Windows that tracks where your time goes. Run timers, pomodoros or a stopwatch against your own categories, set goals, and see the results in charts. It can also be driven from an Ajazz AKP03E Stream Deck.
+A desktop app for Windows and Ubuntu that tracks where your time goes. Run timers, pomodoros or a stopwatch against your own categories, set goals, and see the results in charts. It can also be driven from an Ajazz AKP03E Stream Deck.
 
 Everything stays on your computer. There is no account and no cloud sync.
 
@@ -19,6 +19,16 @@ Everything stays on your computer. There is no account and no cloud sync.
 2. Run it. The installer isn't code-signed, so Windows SmartScreen may warn you: choose **More info**, then **Run anyway**.
 
 Closing the window keeps the app running in the system tray. To exit fully, right-click the tray icon and choose **Quit**.
+
+### Ubuntu
+
+Download `Time-Tracker-Pro-x.x.x-amd64.deb` from the Releases page, then run:
+
+```bash
+sudo apt install ./Time-Tracker-Pro-*-amd64.deb
+```
+
+Launching at startup isn't available on Linux, and global shortcuts may not work on Wayland. Your data is in `~/.config/Time Tracker Pro/data`.
 
 ## Updates
 

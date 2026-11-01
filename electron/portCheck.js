@@ -34,7 +34,21 @@ async function classifyPort(port) {
   return isOurs ? 'ours' : 'other';
 }
 
+const isWindows = process.platform === 'win32';
+
+// Linux: `ss` comes with Ubuntu, and shows the program name for the user's own programs
+function linuxPortLine(port) {
+  try {
+    return execSync(`ss -ltnpH "sport = :${port}"`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    return '';
+  }
+}
+
 function listeningPids(port) {
+  if (!isWindows) {
+    return [...new Set([...linuxPortLine(port).matchAll(/pid=(\d+)/g)].map(match => match[1]))];
+  }
   try {
     const out = execSync('netstat -ano -p tcp', { encoding: 'utf8' });
     const pids = out.split('\n')
@@ -49,12 +63,16 @@ function listeningPids(port) {
 
 function killPort(port) {
   listeningPids(port).forEach(pid => {
-    try { execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore' }); } catch {}
+    try {
+      if (isWindows) execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore' });
+      else process.kill(Number(pid), 'SIGKILL');
+    } catch {}
   });
 }
 
 // The name of the program on the port, for the message we show. Null if it can't be found.
 function portOwnerName(port) {
+  if (!isWindows) return linuxPortLine(port).match(/users:\(\("([^"]+)"/)?.[1] || null;
   const [pid] = listeningPids(port);
   if (!pid) return null;
   try {

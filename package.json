@@ -2,6 +2,7 @@
   "name": "time-tracker-pro",
   "version": "1.2.0",
   "description": "Desktop time tracker with goals, analytics and Stream Deck support",
+  "homepage": "https://github.com/sashiro1995/time-tracker-pro",
   "main": "electron/main.js",
   "scripts": {
     "start": "node start.js",
@@ -30,6 +31,13 @@
       "target": "nsis",
       "icon": "public/icons/icon.ico",
       "artifactName": "Time-Tracker-Pro-Setup-${version}.${ext}"
+    },
+    "linux": {
+      "target": "deb",
+      "icon": "public/icons/icons/png",
+      "category": "Utility",
+      "maintainer": "sashiro1995 <261221093+sashiro1995@users.noreply.github.com>",
+      "artifactName": "Time-Tracker-Pro-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,

@@ -90,7 +90,8 @@ const Settings = (() => {
   // ── Show/hide Electron-only cards ────────────────────────────────────────
   function updateStartupCardVisibility() {
     const card = document.getElementById('settingsStartupCard');
-    if (card) card.hidden = !window.electronAPI?.isElectron;
+    // Electron can only launch at startup on Windows and macOS
+    if (card) card.hidden = !window.electronAPI?.isElectron || window.electronAPI.platform === 'linux';
     const diagCard = document.getElementById('settingsDiagnosticsCard');
     if (diagCard) diagCard.hidden = !window.electronAPI?.isElectron;
     const updateCard = document.getElementById('settingsUpdateCard');
@@ -116,7 +117,7 @@ const Settings = (() => {
     const spaced = html
       .replace(/<li[^>]*>/gi, '$&• ')
       .replace(/<\/(p|li|h\d)>|<br\s*\/?>/gi, '$&\n');
-    return new DOMParser().parseFromString(spaced, 'text/html').body.textContent.trim();
+    return new DOMParser().parseFromString(spaced, 'text/html').body.textContent.replace(/\n\s*\n+/g, '\n').trim();
   }
 
   function setUpdateState(state, detail) {

@@ -1,0 +1,62 @@
+# Builds the Ubuntu package on GitHub's Ubuntu machine, starts it to check it works,
+# and adds it to the release when a version tag is pushed.
+name: Linux build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx electron-builder --linux --publish never
+
+      - name: Install the package
+        run: sudo apt-get update && sudo apt-get install -y ./dist/*.deb xvfb xdotool
+
+      - name: Start the app and check it works
+        run: |
+          mkdir -p "$HOME/shots"
+          xvfb-run -a -s "-screen 0 1280x900x24" bash -c '
+            "/opt/Time Tracker Pro/time-tracker-pro" > "$HOME/app.log" 2>&1 &
+            APP=$!
+            for i in $(seq 1 40); do
+              curl -sf http://localhost:3000/api/app/version && break
+              sleep 1
+            done
+            echo
+            sleep 8
+            curl -sf http://localhost:3000/api/categories > /dev/null && echo "categories ok"
+            curl -sf -o /dev/null http://localhost:3000/sounds/chime.wav && echo "sound ok"
+            WINDOW=$(xdotool search --onlyvisible --name "Time Tracker Pro" | head -1)
+            test -n "$WINDOW" && echo "window visible" || { echo "NO VISIBLE WINDOW"; cat "$HOME/app.log"; exit 1; }
+            kill $APP
+          '
+          ls "$HOME/.config/Time Tracker Pro/data"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: |
+            dist/*.deb
+            dist/latest-linux.yml
+
+      - name: Add to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" dist/*.deb dist/latest-linux.yml --clobber

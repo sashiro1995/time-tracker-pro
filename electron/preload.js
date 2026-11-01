@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron:       true,
+  platform:         process.platform,
   setZoom:          (factor)    => webFrame.setZoomFactor(factor),
   setLoginItem:     (enable)    => ipcRenderer.invoke('set-login-item', enable),
   setShortcuts:     (shortcuts) => ipcRenderer.invoke('set-shortcuts', shortcuts),
