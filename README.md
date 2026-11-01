@@ -28,7 +28,7 @@ Download `Time-Tracker-Pro-x.x.x-amd64.deb` from the Releases page, then run:
 sudo apt install ./Time-Tracker-Pro-*-amd64.deb
 ```
 
-Launching at startup isn't available on Linux, and global shortcuts may not work on Wayland. Your data is in `~/.config/Time Tracker Pro/data`.
+Launching at startup isn't available on Linux, and global shortcuts may not work on Wayland. Your data is in `~/.config/time-tracker-pro/data`.
 
 ## Updates
 

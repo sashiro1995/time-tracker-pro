@@ -41,10 +41,10 @@ jobs:
             curl -sf http://localhost:3000/api/categories > /dev/null && echo "categories ok"
             curl -sf -o /dev/null http://localhost:3000/sounds/chime.wav && echo "sound ok"
             WINDOW=$(xdotool search --onlyvisible --name "Time Tracker Pro" | head -1)
-            test -n "$WINDOW" && echo "window visible" || { echo "NO VISIBLE WINDOW"; cat "$HOME/app.log"; exit 1; }
+            test -n "$WINDOW" && echo "window visible" || { echo "::error::No visible window"; cat "$HOME/app.log"; exit 1; }
             kill $APP
           '
-          ls "$HOME/.config/Time Tracker Pro/data"
+          ls "$HOME/.config/time-tracker-pro/data" || { echo "::error::Data folder is missing"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         with:
