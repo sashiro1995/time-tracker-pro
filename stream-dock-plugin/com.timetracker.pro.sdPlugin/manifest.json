@@ -1,0 +1,70 @@
+{
+  "SDKVersion": 1,
+  "Author": "Time Tracker Pro",
+  "Name": "Time Tracker Pro",
+  "Description": "Control your Time Tracker Pro timers directly from your Stream Deck. Shows live countdown and elapsed time on buttons.",
+  "Icon": "images/plugin-icon",
+  "CodePath": "plugin.html",
+  "Version": "1.1.0",
+  "Category": "Time Tracker Pro",
+  "CategoryIcon": "images/plugin-icon",
+  "URL": "http://localhost:3000",
+  "OS": [
+    { "Platform": "windows", "MinimumVersion": "10" },
+    { "Platform": "mac",     "MinimumVersion": "10.15" }
+  ],
+  "Software": { "MinimumVersion": "2.9" },
+  "Actions": [
+    {
+      "Name": "Timer",
+      "Icon": "images/timer-icon",
+      "UUID": "com.timetracker.pro.timer",
+      "Tooltip": "Countdown timer for a category. Single press: start / pause / resume. Double press (<600ms): stop + log.",
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": true,
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "images/timer-icon",
+          "TitleAlignment": "bottom",
+          "FontSize": "16"
+        }
+      ],
+      "PropertyInspectorPath": "propertyInspector/timer.html"
+    },
+    {
+      "Name": "Stopwatch",
+      "Icon": "images/stopwatch-icon",
+      "UUID": "com.timetracker.pro.stopwatch",
+      "Tooltip": "Stopwatch for a category. Single press: start / pause / resume. Double press (<600ms): stop + log.",
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": true,
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "images/stopwatch-icon",
+          "TitleAlignment": "bottom",
+          "FontSize": "16"
+        }
+      ],
+      "PropertyInspectorPath": "propertyInspector/stopwatch.html"
+    },
+    {
+      "Name": "Pomodoro",
+      "Icon": "images/pomodoro-icon",
+      "UUID": "com.timetracker.pro.pomodoro",
+      "Tooltip": "Pomodoro timer. Shows phase (WORK / SHORT BRK / LONG BRK) and countdown in color. Single press: start / stop.",
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": true,
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "images/pomodoro-icon",
+          "TitleAlignment": "bottom",
+          "FontSize": "16"
+        }
+      ],
+      "PropertyInspectorPath": "propertyInspector/pomodoro.html"
+    }
+  ]
+}

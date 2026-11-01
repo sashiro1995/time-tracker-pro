@@ -1,0 +1,24 @@
+{
+  "timerPresets": [600, 1500, 1800, 3600, 7200],
+  "defaultCategory": "work",
+  "weekStartsOn": "monday",
+  "alertSound": "chime.wav",
+  "alertSoundName": "Default",
+  "alertSoundMode": "duration",
+  "alertSoundDuration": 10,
+  "launchAtStartup": false,
+  "shortcuts": {
+    "startTimer": "Ctrl+Shift+T",
+    "pauseTimer": "Ctrl+Shift+P",
+    "stopTimer": "Ctrl+Shift+S",
+    "toggleWindow": "Ctrl+Shift+Space"
+  },
+  "pomodoro": {
+    "workDuration": 1500,
+    "shortBreakDuration": 300,
+    "longBreakDuration": 900,
+    "cyclesBeforeLongBreak": 4,
+    "autoStartBreaks": false,
+    "autoStartFocus": false
+  }
+}

@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Time Tracker Pro</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lucide@0.460.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
+
+  <!-- Before the stylesheet, so the saved theme is on before the first paint -->
+  <script src="js/appearance.js"></script>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar" role="navigation" aria-label="Main navigation">
+    <div class="sidebar__logo">
+      <i data-lucide="timer" class="sidebar__logo-icon"></i>
+      <span class="sidebar__logo-text">Time Tracker</span>
+    </div>
+
+    <nav class="sidebar__nav">
+      <a href="#" class="sidebar__nav-item is-active" data-screen="dashboard" aria-current="page" aria-label="Dashboard">
+        <i data-lucide="layout-dashboard"></i>
+        <span>Dashboard</span>
+      </a>
+      <a href="#" class="sidebar__nav-item" data-screen="analytics" aria-label="Analytics">
+        <i data-lucide="bar-chart-2"></i>
+        <span>Analytics</span>
+      </a>
+      <a href="#" class="sidebar__nav-item" data-screen="log" aria-label="Log">
+        <i data-lucide="list"></i>
+        <span>Log</span>
+      </a>
+
+      <div class="sidebar__nav-label">Track</div>
+      <a href="#" class="sidebar__nav-item" data-screen="timer" aria-label="Timer">
+        <i data-lucide="circle-play"></i>
+        <span>Timer</span>
+      </a>
+      <a href="#" class="sidebar__nav-item" data-screen="pomodoro" aria-label="Pomodoro">
+        <i data-lucide="timer-reset"></i>
+        <span>Pomodoro</span>
+      </a>
+      <a href="#" class="sidebar__nav-item" data-screen="stopwatch" aria-label="Stopwatch">
+        <i data-lucide="watch"></i>
+        <span>Stopwatch</span>
+      </a>
+
+      <div class="sidebar__nav-label">Plan</div>
+      <a href="#" class="sidebar__nav-item" data-screen="goals" aria-label="Goals">
+        <i data-lucide="target"></i>
+        <span>Goals</span>
+      </a>
+      <a href="#" class="sidebar__nav-item" data-screen="notes" aria-label="Notes">
+        <i data-lucide="notebook-pen"></i>
+        <span>Notes</span>
+      </a>
+
+      <div class="sidebar__nav-spacer"></div>
+      <a href="#" class="sidebar__nav-item" data-screen="settings" aria-label="Settings">
+        <i data-lucide="settings-2"></i>
+        <span>Settings</span>
+        <span class="nav-update-badge" id="settingsUpdateBadge" hidden></span>
+      </a>
+    </nav>
+
+    <!-- Active timers stack (one card per active timer, built by JS) -->
+    <div class="sidebar__timers" id="sidebarTimers"></div>
+    <!-- Active stopwatch widget -->
+    <div class="sidebar__active-timer" id="sidebarStopwatch" hidden>
+      <div class="sidebar__active-timer-label">
+        <span class="pulse-dot pulse-dot--sw"></span>
+        <span id="sidebarSwCategory">—</span>
+      </div>
+      <div class="sidebar__active-timer-time" id="sidebarSwTime">00:00:00</div>
+    </div>
+
+    <div class="sidebar__version" id="sidebarVersion">v—</div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main class="main" id="main">
+
+    <!-- Dashboard -->
+    <section class="screen" id="screen-dashboard" aria-label="Dashboard">
+      <header class="screen__header">
+        <h1 class="screen__title">Dashboard</h1>
+        <p class="screen__subtitle" id="dashboardDate">—</p>
+      </header>
+
+      <div class="card today">
+        <div class="today__head">
+          <div class="today__hero">
+            <div class="label">Today</div>
+            <div class="today__value" id="statToday">0m</div>
+          </div>
+          <dl class="today__stats">
+            <div class="today__stat">
+              <dt class="label">This week</dt>
+              <dd class="today__stat-value" id="statWeek">0m</dd>
+              <dd class="today__stat-note" id="statWeekNote"></dd>
+            </div>
+            <div class="today__stat">
+              <dt class="label">Sessions today</dt>
+              <dd class="today__stat-value" id="statSessions">0</dd>
+              <dd class="today__stat-note" id="statSessionsNote"></dd>
+            </div>
+          </dl>
+        </div>
+        <div id="todayTimeline"></div>
+      </div>
+
+      <div id="dashboardGoals"></div>
+
+      <div class="cards-row cards-row--wide-left">
+        <div class="card">
+          <div class="card__head">
+            <h2 class="card__title">This week</h2>
+          </div>
+          <div class="chart-wrap" data-empty-text="Nothing tracked yet this week"><canvas id="weekChart" role="img" aria-label="Hours tracked each day this week, stacked by category"></canvas></div>
+          <div class="chart-legend" id="weekLegend"></div>
+        </div>
+        <div class="card">
+          <div class="card__head">
+            <h2 class="card__title">Where the time went</h2>
+            <div class="segmented segmented--sm" id="breakdownRange" role="group" aria-label="Breakdown range">
+              <button class="segmented__btn" data-days="7">7d</button>
+              <button class="segmented__btn is-active" data-days="30">30d</button>
+              <button class="segmented__btn" data-days="all">All</button>
+            </div>
+          </div>
+          <div id="categoryBreakdown" class="breakdown-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Timer -->
+    <section class="screen" id="screen-timer" aria-label="Timer" hidden>
+      <header class="screen__header">
+        <h1 class="screen__title">Timer</h1>
+      </header>
+
+      <div class="timer-layout">
+        <div class="timer-ring-wrap">
+          <svg class="timer-ring" viewBox="0 0 220 220" aria-hidden="true">
+            <circle class="timer-ring__track" cx="110" cy="110" r="96" />
+            <circle class="timer-ring__progress" id="timerRingProgress" cx="110" cy="110" r="96" />
+          </svg>
+          <div class="timer-display">
+            <div class="timer-display__time" id="timerDisplay" aria-live="polite" aria-label="Timer">25:00</div>
+            <div class="timer-display__category" id="timerCategoryLabel">—</div>
+          </div>
+        </div>
+
+        <div class="timer-controls">
+          <div class="preset-row" role="group" aria-label="Duration presets">
+            <button class="btn-preset" data-seconds="600"  aria-label="10 minutes">10m</button>
+            <button class="btn-preset is-active" data-seconds="1500" aria-label="25 minutes">25m</button>
+            <button class="btn-preset" data-seconds="1800" aria-label="30 minutes">30m</button>
+            <button class="btn-preset" data-seconds="3600" aria-label="1 hour">1h</button>
+            <button class="btn-preset" data-seconds="7200" aria-label="2 hours">2h</button>
+            <button class="btn-preset" data-seconds="custom" aria-label="Custom duration">Custom</button>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label" for="timerCategory">Category</label>
+            <select class="form-select" id="timerCategory" aria-label="Select category"></select>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label" for="timerNote">Note <span class="form-label--optional">(optional)</span></label>
+            <input class="form-input" id="timerNote" type="text" placeholder="What are you working on?" maxlength="120" />
+          </div>
+
+          <div class="timer-action-row">
+            <button class="btn btn--primary btn--lg" id="btnTimerToggle" aria-label="Start timer">
+              <span id="timerToggleIconPlay"><i data-lucide="play"></i></span>
+              <span id="timerToggleIconPause" hidden><i data-lucide="pause"></i></span>
+              <span id="timerToggleLabel">Start</span>
+            </button>
+            <button class="btn btn--danger btn--lg" id="btnTimerStop" aria-label="Stop timer" hidden>
+              <i data-lucide="square"></i> Stop
+            </button>
+          </div>
+
+          <div class="sound-row">
+            <div class="sound-row__info">
+              <i data-lucide="music"></i>
+              <span id="soundName">翼.wav</span>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <button class="btn btn--ghost btn--sm btn--icon" id="btnTestSound" aria-label="Test alert sound" title="Test sound">
+                <i data-lucide="play"></i>
+              </button>
+              <button class="btn btn--ghost btn--sm" id="btnChangeSound" aria-label="Change alert sound">
+                <i data-lucide="folder-open"></i> Change
+              </button>
+            </div>
+            <input type="file" id="soundFilePicker" accept="audio/*" style="display:none">
+          </div>
+        </div>
+
+        <!-- Other active timers queue -->
+        <div class="timer-queue" id="timerQueue" hidden>
+          <p class="timer-queue__label">Other Active Timers</p>
+          <div class="timer-queue__list" id="timerQueueList"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pomodoro -->
+    <section class="screen" id="screen-pomodoro" aria-label="Pomodoro" hidden>
+      <header class="screen__header">
+        <h1 class="screen__title">Pomodoro</h1>
+        <div class="screen__actions">
+          <button class="btn btn--ghost btn--sm" id="btnPomoSettings" aria-expanded="false" aria-controls="pomoSettingsPanel">
+            <i data-lucide="sliders-horizontal"></i> Settings
+          </button>
+        </div>
+      </header>
+
+      <div class="pomo-layout" id="pomoLayout">
+        <div class="pomo-stage" id="pomoStage">
+          <div class="timer-ring-wrap pomo-ring">
+            <svg class="timer-ring" viewBox="0 0 220 220" aria-hidden="true">
+              <circle class="timer-ring__track" cx="110" cy="110" r="96" />
+              <circle class="timer-ring__progress" id="pomodoroScreenRing" cx="110" cy="110" r="96" />
+            </svg>
+            <div class="timer-display">
+              <div class="pomo-phase-label" id="pomodoroScreenPhase">Focus</div>
+              <div class="timer-display__time" id="pomodoroScreenDisplay" aria-live="off">25:00</div>
+              <div class="timer-display__category" id="pomodoroScreenCatLabel">No category</div>
+            </div>
+          </div>
+
+          <div class="pomo-cycle">
+            <div class="pomo-track" id="pomoTrack" aria-hidden="true"></div>
+            <div class="pomo-cycle__meta">
+              <span id="pomoRound"></span>
+              <span id="pomoFinish"></span>
+            </div>
+          </div>
+
+          <p class="pomo-focus-note" id="pomoFocusNote" hidden></p>
+
+          <div class="pomo-setup" id="pomoSetup">
+            <select class="form-select" id="pomodoroCategory" aria-label="Category"></select>
+            <input class="form-input" id="pomodoroNote" type="text" placeholder="What will you focus on?" maxlength="120" aria-label="What will you focus on?" />
+            <p class="pomo-setup__hint" id="pomoNoCategory" hidden>Choose a category to save this time to your log.</p>
+          </div>
+
+          <div class="pomo-actions" id="pomoActions">
+            <button class="btn btn--primary btn--lg pomo-actions__main" id="btnPomodoroToggle"></button>
+            <button class="btn btn--ghost btn--lg" id="btnPomodoroScreenSkip" hidden></button>
+            <button class="btn btn--ghost btn--lg btn--icon" id="btnPomodoroStop" aria-label="Stop and end this cycle" title="Stop and end this cycle" hidden>
+              <i data-lucide="square"></i>
+            </button>
+          </div>
+
+          <p class="pomo-today" id="pomoToday"></p>
+        </div>
+
+        <aside class="pomo-settings" id="pomoSettingsPanel" aria-label="Pomodoro settings" hidden>
+          <div class="pomo-settings__head">
+            <h2 class="card__title">Settings</h2>
+            <span class="pomo-settings__saved" id="pomoSaved" aria-live="polite"></span>
+          </div>
+
+          <div class="pomo-presets" id="pomoPresets" role="group" aria-label="Presets"></div>
+
+          <div class="pomo-steppers">
+            <div class="pomo-stepper">
+              <label for="pomoFieldWork">Focus <span>min</span></label>
+              <div class="pomo-stepper__control">
+                <button type="button" data-pomo-step="work" data-dir="-1" aria-label="Shorter focus"><i data-lucide="minus"></i></button>
+                <input id="pomoFieldWork" type="number" data-pomo-field="work" min="1" max="180" />
+                <button type="button" data-pomo-step="work" data-dir="1" aria-label="Longer focus"><i data-lucide="plus"></i></button>
+              </div>
+            </div>
+            <div class="pomo-stepper">
+              <label for="pomoFieldShort">Short break <span>min</span></label>
+              <div class="pomo-stepper__control">
+                <button type="button" data-pomo-step="short" data-dir="-1" aria-label="Shorter short break"><i data-lucide="minus"></i></button>
+                <input id="pomoFieldShort" type="number" data-pomo-field="short" min="1" max="60" />
+                <button type="button" data-pomo-step="short" data-dir="1" aria-label="Longer short break"><i data-lucide="plus"></i></button>
+              </div>
+            </div>
+            <div class="pomo-stepper">
+              <label for="pomoFieldLong">Long break <span>min</span></label>
+              <div class="pomo-stepper__control">
+                <button type="button" data-pomo-step="long" data-dir="-1" aria-label="Shorter long break"><i data-lucide="minus"></i></button>
+                <input id="pomoFieldLong" type="number" data-pomo-field="long" min="1" max="120" />
+                <button type="button" data-pomo-step="long" data-dir="1" aria-label="Longer long break"><i data-lucide="plus"></i></button>
+              </div>
+            </div>
+            <div class="pomo-stepper">
+              <label for="pomoFieldRounds">Rounds <span>before long break</span></label>
+              <div class="pomo-stepper__control">
+                <button type="button" data-pomo-step="rounds" data-dir="-1" aria-label="Fewer rounds"><i data-lucide="minus"></i></button>
+                <input id="pomoFieldRounds" type="number" data-pomo-field="rounds" min="1" max="12" />
+                <button type="button" data-pomo-step="rounds" data-dir="1" aria-label="More rounds"><i data-lucide="plus"></i></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="pomo-toggles">
+            <div class="pomo-toggle">
+              <span>Start breaks automatically</span>
+              <label class="toggle-switch" aria-label="Start breaks automatically">
+                <input type="checkbox" id="pomoAutoBreaks" />
+                <span class="toggle-switch__track"></span>
+              </label>
+            </div>
+            <div class="pomo-toggle">
+              <span>Start focus automatically</span>
+              <label class="toggle-switch" aria-label="Start focus automatically">
+                <input type="checkbox" id="pomoAutoFocus" />
+                <span class="toggle-switch__track"></span>
+              </label>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+<!-- Stopwatch -->
+    <section class="screen" id="screen-stopwatch" aria-label="Stopwatch" hidden>
+      <header class="screen__header">
+        <h1 class="screen__title">Stopwatch</h1>
+      </header>
+
+      <div class="timer-layout">
+        <div class="sw-ring-wrap">
+          <div class="sw-dot-outer">
+            <div class="sw-dot" id="swDot"></div>
+          </div>
+          <div class="timer-display">
+            <div class="timer-display__time" id="swDisplay" aria-live="polite">00:00:00</div>
+            <div class="timer-display__category" id="swCategoryLabel">—</div>
+          </div>
+        </div>
+
+        <div class="timer-controls">
+          <div class="form-row">
+            <label class="form-label" for="swCategory">Category</label>
+            <select class="form-select" id="swCategory" aria-label="Select category"></select>
+          </div>
+
+          <div class="form-row">
+            <label class="form-label" for="swNote">Note <span class="form-label--optional">(optional)</span></label>
+            <input class="form-input" id="swNote" type="text" placeholder="What are you working on?" maxlength="120" />
+          </div>
+
+          <div class="timer-action-row">
+            <button class="btn btn--primary btn--lg" id="btnSwToggle" aria-label="Start stopwatch">
+              <span id="swToggleIconPlay"><i data-lucide="play"></i></span>
+              <span id="swToggleIconPause" hidden><i data-lucide="pause"></i></span>
+              <span id="swToggleLabel">Start</span>
+            </button>
+            <button class="btn btn--danger btn--lg" id="btnSwStop" aria-label="Stop and log" hidden>
+              <i data-lucide="square"></i> Stop & Log
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- Log -->
+    <section class="screen" id="screen-log" aria-label="Session log" hidden>
+      <header class="screen__header">
+        <h1 class="screen__title">Log</h1>
+        <div class="screen__actions" id="logDefaultActions">
+          <select class="form-select form-select--sm" id="logFilterCategory" aria-label="Filter by category">
+            <option value="">All categories</option>
+          </select>
+          <button class="btn btn--ghost btn--sm" id="logExportBtn" aria-label="Export sessions as CSV">
+            <i data-lucide="download"></i> Export CSV
+          </button>
+        </div>
+        <div class="screen__actions" id="logSelectActions" hidden>
+          <span class="log-select-count" id="logSelectCount">0 selected</span>
+          <button class="btn btn--ghost btn--sm" id="logSelectAllBtn">Select All</button>
+          <button class="btn btn--danger btn--sm" id="logDeleteBtn" disabled>
+            <i data-lucide="trash-2"></i> Delete
+          </button>
+          <button class="btn btn--ghost btn--sm" id="logCancelSelectBtn">Cancel</button>
+        </div>
+      </header>
+      <div id="logList" class="log-list"></div>
+    </section>
+
+    <!-- Analytics -->
+    <section class="screen" id="screen-analytics" aria-label="Analytics" hidden>
+      <header class="screen__header">
+        <div>
+          <h1 class="screen__title">Analytics</h1>
+          <p class="screen__subtitle" id="analyticsRangeLabel">—</p>
+        </div>
+        <div class="segmented" id="analyticsRangeBar" role="group" aria-label="Date range">
+          <button class="segmented__btn" data-range="today">Today</button>
+          <button class="segmented__btn" data-range="7">7d</button>
+          <button class="segmented__btn is-active" data-range="14">14d</button>
+          <button class="segmented__btn" data-range="30">30d</button>
+          <button class="segmented__btn" data-range="90">3m</button>
+          <button class="segmented__btn" data-range="365">1y</button>
+          <button class="segmented__btn" data-range="all">All</button>
+          <button class="segmented__btn" data-range="custom">Custom</button>
+        </div>
+      </header>
+      <div class="custom-range-inputs" id="analyticsCustomRange" hidden>
+        <input type="date" id="analyticsFrom" class="form-input form-input--sm" aria-label="From date" />
+        <span class="custom-range-sep">to</span>
+        <input type="date" id="analyticsTo" class="form-input form-input--sm" aria-label="To date" />
+        <button class="btn btn--primary btn--sm" id="applyCustomRange">Apply</button>
+      </div>
+
+      <div class="card kpi-strip" id="analyticsKpis"></div>
+
+      <div class="card analytics-main">
+        <div class="card__head">
+          <h2 class="card__title" id="analyticsBarLabel">Hours per day</h2>
+        </div>
+        <div class="chart-wrap chart-wrap--tall" data-empty-text="No sessions in this range"><canvas id="dailyChart" role="img" aria-label="Hours tracked over the selected range, stacked by category"></canvas></div>
+        <div class="chart-legend" id="dailyLegend"></div>
+      </div>
+
+      <div class="cards-row">
+        <div class="card">
+          <div class="card__head">
+            <h2 class="card__title">By category</h2>
+          </div>
+          <div class="share">
+            <div class="share__chart">
+              <div class="chart-wrap chart-wrap--doughnut" data-empty-text=""><canvas id="doughnutChart" role="img" aria-label="Share of tracked time by category"></canvas></div>
+              <div class="share__center">
+                <div class="share__total" id="doughnutTotal">0m</div>
+                <div class="share__caption">total</div>
+              </div>
+            </div>
+            <div id="analyticsBreakdown" class="breakdown-list breakdown-list--compact"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card__head">
+            <h2 class="card__title">When you track</h2>
+          </div>
+          <div id="analyticsHeatmap"></div>
+        </div>
+      </div>
+
+      <div class="card" id="analyticsGoalsCard">
+        <div class="card__head">
+          <h2 class="card__title">Goals</h2>
+        </div>
+        <div id="goalProgressList" class="goal-review-list"></div>
+      </div>
+    </section>
+
+    <!-- Goals -->
+    <section class="screen" id="screen-goals" aria-label="Goals" hidden>
+      <header class="screen__header">
+        <h1 class="screen__title">Goals</h1>
+        <div class="screen__actions">
+          <button class="btn btn--primary" id="btnAddCategory" aria-label="Add new category">
+            <i data-lucide="plus"></i> New category
+          </button>
+        </div>
+      </header>
+      <div id="goalsList"></div>
+    </section>
+
+    <!-- Notes -->
+    <section class="screen" id="screen-notes" aria-label="Notes" hidden>
+      <header class="screen__header">
+        <h1 class="screen__title">Notes</h1>
+        <div class="screen__actions">
+          <button class="btn btn--primary" id="btnAddNote" aria-label="Add new note">
+            <i data-lucide="plus"></i> New note
+          </button>
+        </div>
+      </header>
+      <div class="notes-layout">
+        <aside class="notes-sidebar">
+          <div class="notes-search">
+            <i data-lucide="search"></i>
+            <input type="search" id="notesSearch" placeholder="Search notes" aria-label="Search notes" />
+          </div>
+          <div class="notes-list" id="notesList"></div>
+        </aside>
+        <div class="note-editor" id="notesEditor"></div>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section class="screen" id="screen-settings" aria-label="Settings" hidden>
+      <header class="screen__header">
+        <h1 class="screen__title">Settings</h1>
+      </header>
+
+      <div class="settings-stack">
+
+        <!-- Appearance -->
+        <div class="settings-card">
+          <div class="settings-section-title settings-section-title--row">
+            Appearance
+            <button type="button" class="appearance-reset" id="btnAppearanceReset" hidden>Reset</button>
+          </div>
+          <div class="appearance-group">
+            <div class="appearance-group__label">Theme</div>
+            <div class="theme-grid" id="themeGrid" role="group" aria-label="Theme"></div>
+          </div>
+          <div class="appearance-group">
+            <div class="appearance-group__label">Accent color</div>
+            <div class="appearance-accents">
+              <div class="note-swatches" id="accentSwatches" role="group" aria-label="Accent color"></div>
+              <label class="cat-form__custom-color" id="accentCustom" title="Pick any color">
+                <input type="color" id="accentCustomInput" aria-label="Custom accent color" />
+                <i data-lucide="pipette"></i>
+              </label>
+            </div>
+          </div>
+          <div class="appearance-group" id="textSizeGroup" hidden>
+            <div class="appearance-group__label">Text size</div>
+            <div class="segmented" id="textSizeControl" role="group" aria-label="Text size"></div>
+          </div>
+        </div>
+
+        <!-- Startup -->
+        <div class="settings-card" id="settingsStartupCard">
+          <div class="settings-section-title">Startup</div>
+          <div class="settings-row">
+            <div class="settings-row__info">
+              <div class="settings-row__label">Launch at Windows startup</div>
+              <div class="settings-row__sublabel">App will start minimized to the system tray</div>
+            </div>
+            <label class="toggle-switch" aria-label="Launch at startup">
+              <input type="checkbox" id="settingLaunchAtStartup" />
+              <span class="toggle-switch__track"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Alert Sound Behaviour -->
+        <div class="settings-card">
+          <div class="settings-section-title">Alert Sound</div>
+          <div class="settings-row settings-row--flush">
+            <div class="settings-row__info">
+              <div class="settings-row__label global-sound-strip">
+                <i data-lucide="music" class="global-sound-strip__icon" id="globalSoundIcon"></i>
+                <span id="globalSoundName" class="global-sound-strip__name">Default</span>
+              </div>
+              <div class="settings-row__sublabel">Plays for every timer, unless a category has its own sound</div>
+            </div>
+            <div class="settings-row__actions">
+              <button class="btn btn--ghost btn--sm btn--icon" id="btnGlobalTestSound" aria-label="Test alert sound" title="Test sound" hidden>
+                <i data-lucide="play"></i>
+              </button>
+              <button class="btn btn--ghost btn--sm btn--icon" id="btnGlobalResetSound" aria-label="Reset to default sound" title="Reset to default" hidden>
+                <i data-lucide="rotate-ccw"></i>
+              </button>
+              <button class="btn btn--ghost btn--sm" id="btnGlobalSound" aria-label="Change alert sound">
+                <i data-lucide="folder-open"></i> Change
+              </button>
+            </div>
+            <input type="file" id="globalSoundPicker" accept="audio/*" style="display:none" />
+          </div>
+          <p class="settings-description">Choose how long the alert plays when a timer finishes.</p>
+          <div class="sound-mode-options">
+            <label class="radio-option">
+              <input type="radio" name="alertSoundMode" value="loop" id="soundModeLoop" />
+              <span class="radio-option__label">Loop until dismissed</span>
+              <span class="radio-option__sub">Sound plays until you click Done or Stop</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="alertSoundMode" value="once" id="soundModeOnce" />
+              <span class="radio-option__label">Play once</span>
+              <span class="radio-option__sub">Sound plays a single time, then stops</span>
+            </label>
+            <label class="radio-option radio-option--duration">
+              <input type="radio" name="alertSoundMode" value="duration" id="soundModeDuration" />
+              <span class="radio-option__label">Play for</span>
+              <input type="number" class="form-input form-input--sm sound-duration-input" id="alertSoundDurationInput"
+                     min="1" max="3600" value="10" aria-label="Alert sound duration in seconds" />
+              <span class="radio-option__label">seconds</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Global Shortcuts -->
+        <div class="settings-card">
+          <div class="settings-section-title">Global Shortcuts</div>
+          <p class="settings-description">These work even when the app is in the background or minimized to tray.</p>
+
+          <div class="shortcuts-list" id="shortcutsList"></div>
+
+          <div class="settings-card__footer">
+            <button class="btn btn--ghost btn--sm" id="btnResetShortcuts">
+              <i data-lucide="rotate-ccw"></i> Reset to Defaults
+            </button>
+            <button class="btn btn--primary btn--sm" id="btnSaveShortcuts">
+              <i data-lucide="save"></i> Save Shortcuts
+            </button>
+          </div>
+        </div>
+
+        <!-- Updates (Electron-only) -->
+        <div class="settings-card" id="settingsUpdateCard">
+          <div class="settings-section-title">Updates</div>
+          <div class="update-status" aria-live="polite">
+            <span class="update-status__icon" id="updateStatusIcon"></span>
+            <div class="settings-row__info">
+              <div class="settings-row__label" id="updateStatusLabel"></div>
+              <div class="settings-row__sublabel" id="updateStatusSub"></div>
+            </div>
+            <div class="settings-row__actions">
+              <button class="btn btn--primary btn--sm" id="btnDownloadUpdate" hidden>
+                <i data-lucide="download"></i> Download
+              </button>
+              <button class="btn btn--primary btn--sm" id="btnInstallUpdate" hidden>
+                <i data-lucide="rotate-cw"></i> Restart and install
+              </button>
+              <button class="btn btn--ghost btn--sm" id="btnCheckUpdates">
+                <i data-lucide="refresh-cw"></i> Check for updates
+              </button>
+            </div>
+          </div>
+          <div class="update-progress" id="updateProgress" hidden>
+            <div class="update-progress__fill" id="updateProgressFill"></div>
+          </div>
+          <div class="update-notes" id="updateNotes" hidden>
+            <div class="label" id="updateNotesTitle"></div>
+            <p class="update-notes__text" id="updateNotesText"></p>
+          </div>
+        </div>
+
+        <!-- Diagnostics (Electron-only) -->
+        <div class="settings-card" id="settingsDiagnosticsCard">
+          <div class="settings-section-title">Diagnostics</div>
+          <div class="settings-row">
+            <div class="settings-row__info">
+              <div class="settings-row__label">Error log location</div>
+              <div class="settings-row__sublabel" id="settingsLogPath">—</div>
+            </div>
+            <button class="btn btn--ghost btn--sm" id="btnOpenLogFolder" aria-label="Open log folder in Explorer">
+              <i data-lucide="folder-open"></i> Open folder
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- New / Edit Category modal -->
+  <div class="modal-backdrop" id="newCategoryModal" hidden role="dialog" aria-modal="true" aria-labelledby="newCategoryTitle">
+    <div class="modal modal--category" id="newCatForm">
+      <input type="hidden" id="editCatId" value="" />
+
+      <div class="cat-form__hero">
+        <h2 class="label cat-form__heading" id="newCategoryTitle">New category</h2>
+        <div class="cat-form__name-row">
+          <span class="cat-form__dot"></span>
+          <input class="cat-form__name" id="newCatName" type="text" placeholder="What do you want to track?" maxlength="40" aria-label="Category name" />
+        </div>
+        <p class="cat-form__error" id="newCatError" role="alert" hidden></p>
+      </div>
+
+      <div class="cat-form__body">
+        <div class="form-row">
+          <span class="form-label">Color</span>
+          <div class="cat-form__colors">
+            <div class="note-swatches" id="newCatSwatches" role="group" aria-label="Category color"></div>
+            <label class="cat-form__custom-color" id="newCatCustomColor" title="Pick any color">
+              <input type="color" id="newCatColor" value="#6366F1" aria-label="Custom color" />
+              <i data-lucide="pipette"></i>
+            </label>
+          </div>
+        </div>
+
+        <div class="cat-form__setup" id="newCatSetup">
+          <div class="form-row">
+            <label class="form-label" for="newCatGoalHours">Goal <span class="form-label--optional">(optional)</span></label>
+            <div class="target-panel__period-row">
+              <input class="form-input" id="newCatGoalHours" type="number" min="0.5" step="0.5" placeholder="Hours" />
+              <select class="form-select" id="newCatGoalPeriod" aria-label="Goal period">
+                <option value="day">/ day</option>
+                <option value="week" selected>/ week</option>
+                <option value="month">/ month</option>
+                <option value="year">/ year</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <label class="form-label" for="newCatDuration">Timer length</label>
+            <select class="form-select" id="newCatDuration">
+              <option value="600">10m</option>
+              <option value="1500">25m</option>
+              <option value="1800" selected>30m</option>
+              <option value="3600">1h</option>
+              <option value="7200">2h</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <span class="form-label">Alert sound</span>
+          <div class="cat-sound-row">
+            <i data-lucide="music" class="cat-sound-row__icon"></i>
+            <span id="newCatSoundName" class="cat-sound-name">Uses your default sound</span>
+            <div class="settings-row__actions">
+              <button class="btn btn--ghost btn--sm btn--icon" id="btnNewCatTestSound" aria-label="Test sound" hidden>
+                <i data-lucide="play"></i>
+              </button>
+              <button class="btn btn--ghost btn--sm btn--icon" id="btnNewCatClearSound" aria-label="Clear sound" hidden>
+                <i data-lucide="x"></i>
+              </button>
+              <button class="btn btn--ghost btn--sm" id="btnNewCatSound" type="button">Choose</button>
+            </div>
+          </div>
+          <input type="file" id="newCatSoundPicker" accept="audio/*" style="display:none" />
+        </div>
+
+        <div class="modal__actions">
+          <button class="btn btn--danger cat-form__delete" id="btnNewCatDelete" hidden>Delete</button>
+          <button class="btn btn--ghost" id="btnNewCatCancel">Cancel</button>
+          <button class="btn btn--primary" id="btnNewCatConfirm">Add category</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log time / Edit session modal -->
+  <div class="modal-backdrop" id="sessionModal" hidden role="dialog" aria-modal="true" aria-labelledby="sessionModalTitle">
+    <form class="modal session-form" id="sessionForm" novalidate>
+      <h2 class="modal__title" id="sessionModalTitle">Log time</h2>
+
+      <div class="form-row">
+        <label class="form-label" for="sessionCategory">Category</label>
+        <select class="form-select" id="sessionCategory"></select>
+      </div>
+
+      <div class="form-row">
+        <span class="form-label">How long</span>
+        <div class="session-form__duration">
+          <div class="session-form__chips" id="sessionChips" role="group" aria-label="Common durations">
+            <button type="button" class="btn-preset" data-session-minutes="30">30m</button>
+            <button type="button" class="btn-preset" data-session-minutes="60">1h</button>
+            <button type="button" class="btn-preset" data-session-minutes="120">2h</button>
+          </div>
+          <div class="session-form__amount">
+            <label class="session-form__unit">
+              <input class="form-input" id="sessionHours" type="number" min="0" max="24" placeholder="0" aria-label="Hours" />
+              <span>hours</span>
+            </label>
+            <label class="session-form__unit">
+              <input class="form-input" id="sessionMinutes" type="number" min="0" max="59" placeholder="0" aria-label="Minutes" />
+              <span>minutes</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label" for="sessionEnd">Finished at</label>
+        <input class="form-input" id="sessionEnd" type="datetime-local" />
+      </div>
+
+      <div class="form-row">
+        <label class="form-label" for="sessionNote">Note <span class="form-label--optional">(optional)</span></label>
+        <input class="form-input" id="sessionNote" type="text" maxlength="200" />
+      </div>
+
+      <p class="session-form__error" id="sessionError" role="alert" hidden></p>
+
+      <div class="modal__actions">
+        <button type="button" class="btn btn--ghost" id="btnSessionCancel">Cancel</button>
+        <button type="submit" class="btn btn--primary" id="btnSessionSave">Log time</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Confirm delete modal -->
+  <div class="modal-backdrop" id="confirmDeleteModal" hidden role="dialog" aria-modal="true" aria-labelledby="confirmDeleteTitle">
+    <div class="modal">
+      <h2 class="modal__title" id="confirmDeleteTitle">Delete Category?</h2>
+      <p id="confirmDeleteBody" style="color:var(--text-secondary);font-size:14px;line-height:1.6;margin:8px 0 0"></p>
+      <div id="confirmDeleteWarning" class="confirm-delete-warning" hidden>
+        <i data-lucide="alert-triangle" style="flex-shrink:0;color:var(--color-error)"></i>
+        <p id="confirmDeleteSessions" style="margin:0;font-size:13px;line-height:1.5"></p>
+      </div>
+      <div class="modal__actions">
+        <button class="btn btn--ghost" id="btnConfirmDeleteCancel">Cancel</button>
+        <button class="btn btn--danger-solid" id="btnConfirmDeleteOk">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom duration modal -->
+  <div class="modal-backdrop" id="customDurationModal" hidden role="dialog" aria-modal="true" aria-labelledby="customDurationTitle">
+    <div class="modal">
+      <h2 class="modal__title" id="customDurationTitle">Custom Duration</h2>
+      <div style="display:flex;gap:12px">
+        <div class="form-row" style="flex:1">
+          <label class="form-label" for="customMinutes">Minutes</label>
+          <input class="form-input" id="customMinutes" type="number" min="0" max="480" value="0" />
+        </div>
+        <div class="form-row" style="flex:1">
+          <label class="form-label" for="customSeconds">Seconds</label>
+          <input class="form-input" id="customSeconds" type="number" min="0" max="59" value="15" />
+        </div>
+      </div>
+      <div class="modal__actions">
+        <button class="btn btn--ghost" id="btnCustomCancel">Cancel</button>
+        <button class="btn btn--primary" id="btnCustomConfirm">Set Duration</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/alertSound.js"></script>
+  <script src="js/timer.js"></script>
+  <script src="js/pomodoro.js"></script>
+  <script src="js/stopwatch.js"></script>
+  <script src="js/sessionForm.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/logs.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/notes.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

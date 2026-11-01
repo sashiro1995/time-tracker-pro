@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      background: #1a1a1a;
+      color: #d4d4d4;
+      padding: 12px;
+    }
+
+    .offline {
+      display: none;
+      background: rgba(123,79,202,0.12);
+      border: 1px solid rgba(123,79,202,0.35);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 11px;
+      color: #9B72E0;
+      margin-bottom: 12px;
+    }
+
+    .section { margin-bottom: 14px; }
+
+    .label {
+      display: block;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #666;
+      margin-bottom: 6px;
+    }
+
+    select {
+      width: 100%;
+      padding: 7px 28px 7px 10px;
+      background: #2a2a2a;
+      color: #d4d4d4;
+      border: 1px solid #3a3a3a;
+      border-radius: 6px;
+      font-size: 13px;
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+    }
+    select:focus { border-color: #7B4FCA; }
+
+    .size-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    input[type=range] {
+      flex: 1;
+      accent-color: #7B4FCA;
+      cursor: pointer;
+    }
+    .size-val {
+      font-size: 12px;
+      font-weight: 600;
+      color: #9B72E0;
+      width: 26px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .divider { border: none; border-top: 1px solid #2a2a2a; margin: 14px 0; }
+
+    .hint { font-size: 11px; color: #555; line-height: 1.7; }
+    .hint b { color: #777; }
+  </style>
+</head>
+<body>
+
+  <div class="offline" id="offline">App not running — start Time Tracker Pro first.</div>
+
+  <div class="section">
+    <span class="label">Category</span>
+    <select id="category"><option value="">Loading…</option></select>
+  </div>
+
+  <div class="section">
+    <span class="label">Stopwatch Text Size</span>
+    <div class="size-row">
+      <input type="range" id="timerFontSize" min="10" max="24" step="1" value="16">
+      <span class="size-val" id="timerFontSizeVal">16</span>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <div class="hint">
+    <b>Single press</b> — start / pause / resume<br>
+    <b>Double press</b> — stop + log session
+  </div>
+
+  <script>
+    const APP = 'http://localhost:3000';
+    let ws, uuid;
+    let currentSettings = {};
+    let allCategories   = [];
+
+    function connectElgatoStreamDeckSocket(port, inUUID, registerEvent, appInfo, inActionInfo) {
+      uuid = inUUID;
+      try {
+        const info      = JSON.parse(inActionInfo);
+        currentSettings = info?.payload?.settings ?? {};
+      } catch (_) {}
+
+      ws = new WebSocket(`ws://127.0.0.1:${port}`);
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ event: registerEvent, uuid }));
+        if (currentSettings.categoryId)
+          ws.send(JSON.stringify({ event: 'setSettings', context: uuid, payload: currentSettings }));
+      };
+      ws.onmessage = (evt) => {
+        try {
+          const d = JSON.parse(evt.data);
+          if (d.event === 'didReceiveSettings') {
+            currentSettings = d.payload?.settings ?? {};
+            syncAll();
+          }
+        } catch (_) {}
+      };
+
+      init();
+    }
+
+    async function init() {
+      await loadCategories();
+      syncAll();
+      bindEvents();
+    }
+
+    async function loadCategories() {
+      try {
+        const r = await fetch(`${APP}/api/categories`);
+        const { categories } = await r.json();
+        allCategories = categories.filter(c => !c.archived);
+        document.getElementById('offline').style.display = 'none';
+        buildSelect();
+      } catch (_) {
+        document.getElementById('offline').style.display = 'block';
+        document.getElementById('category').innerHTML = '<option value="">App offline</option>';
+      }
+    }
+
+    function buildSelect() {
+      const sel = document.getElementById('category');
+      sel.innerHTML = '';
+      allCategories.forEach(cat => {
+        const opt         = document.createElement('option');
+        opt.value         = cat.id;
+        opt.textContent   = cat.name;
+        opt.dataset.name  = cat.name;
+        opt.dataset.color = cat.color;
+        if (cat.id === currentSettings.categoryId) opt.selected = true;
+        sel.appendChild(opt);
+      });
+
+      if (!currentSettings.categoryId && allCategories.length) {
+        const first = allCategories[0];
+        updateSettings({ categoryId: first.id, categoryName: first.name, categoryColor: first.color });
+      }
+
+      sel.onchange = () => {
+        const opt = sel.options[sel.selectedIndex];
+        updateSettings({ categoryId: opt.value, categoryName: opt.dataset.name, categoryColor: opt.dataset.color });
+      };
+    }
+
+    function syncAll() {
+      const sel = document.getElementById('category');
+      for (const opt of sel.options) opt.selected = opt.value === currentSettings.categoryId;
+
+      const tSlider = document.getElementById('timerFontSize');
+      const tVal    = document.getElementById('timerFontSizeVal');
+      const tfs     = currentSettings.timerFontSize ?? 16;
+      tSlider.value    = tfs;
+      tVal.textContent = tfs;
+    }
+
+    function bindEvents() {
+      const tSlider = document.getElementById('timerFontSize');
+      const tVal    = document.getElementById('timerFontSizeVal');
+      tSlider.oninput = () => {
+        tVal.textContent = tSlider.value;
+        updateSettings({ timerFontSize: parseInt(tSlider.value) });
+      };
+    }
+
+    function updateSettings(patch) {
+      currentSettings = { ...currentSettings, ...patch };
+      if (ws?.readyState === WebSocket.OPEN)
+        ws.send(JSON.stringify({ event: 'setSettings', context: uuid, payload: currentSettings }));
+    }
+  </script>
+</body>
+</html>

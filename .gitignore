@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.tmp/
+.env
+sessions/
+
+# Personal data and local tools: new installs start from defaults/
+data/
+stream-deck/
+.claude/
+plans/
+requirements.md
+CLAUDE.md
+launch.vbs
+public/icon-builder.html
+public/category-images/
+public/sounds/alert.wav
+public/sounds/cat-*

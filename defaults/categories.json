@@ -1,0 +1,9 @@
+{
+  "categories": [
+    { "id": "work", "name": "Work", "color": "#3B82F6", "targetValue": null, "targetPeriod": null, "lifetimeTarget": null, "lifetimeDeadline": null, "defaultDuration": 1500, "archived": false },
+    { "id": "study", "name": "Study", "color": "#10B981", "targetValue": null, "targetPeriod": null, "lifetimeTarget": null, "lifetimeDeadline": null, "defaultDuration": 1800, "archived": false },
+    { "id": "reading", "name": "Reading", "color": "#F59E0B", "targetValue": null, "targetPeriod": null, "lifetimeTarget": null, "lifetimeDeadline": null, "defaultDuration": 1800, "archived": false },
+    { "id": "exercise", "name": "Exercise", "color": "#8B5CF6", "targetValue": null, "targetPeriod": null, "lifetimeTarget": null, "lifetimeDeadline": null, "defaultDuration": 1800, "archived": false },
+    { "id": "fun", "name": "Fun", "color": "#EC4899", "targetValue": null, "targetPeriod": null, "lifetimeTarget": null, "lifetimeDeadline": null, "defaultDuration": 1800, "archived": false }
+  ]
+}

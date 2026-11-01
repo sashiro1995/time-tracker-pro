@@ -1,0 +1,76 @@
+{
+  "name": "time-tracker-pro",
+  "version": "1.2.0",
+  "description": "Desktop time tracker with goals, analytics and Stream Deck support",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "node start.js",
+    "app": "electron .",
+    "generate-ico": "node scripts/generate-ico.js",
+    "build": "npm run generate-ico && electron-builder --win",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "sashiro1995",
+  "license": "ISC",
+  "type": "commonjs",
+  "build": {
+    "appId": "com.timetracker.pro",
+    "productName": "Time Tracker Pro",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "sashiro1995",
+      "repo": "time-tracker-pro"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "public/icons/icon.ico",
+      "artifactName": "Time-Tracker-Pro-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Time Tracker Pro"
+    },
+    "files": [
+      "**/*",
+      "!sessions/**",
+      "!plans/**",
+      "!scripts/**",
+      "!dist/**",
+      "!.tmp/**",
+      "!*.md",
+      "!workflows/**",
+      "!tools/**",
+      "!data/**",
+      "!stream-deck/**",
+      "!.claude/**",
+      "!launch.vbs",
+      "!public/icon-builder.html",
+      "!public/category-images/**",
+      "!public/sounds/alert.wav",
+      "!public/sounds/cat-*"
+    ]
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "electron-log": "^5.4.4",
+    "electron-updater": "^6.8.3",
+    "express": "^5.2.1",
+    "uuid": "^14.0.0",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "electron": "^42.3.0",
+    "electron-builder": "^26.8.1",
+    "electron-icon-builder": "^2.0.1",
+    "png-to-ico": "^3.0.1"
+  },
+  "repository": "github:sashiro1995/time-tracker-pro"
+}
