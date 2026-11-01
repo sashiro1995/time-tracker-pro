@@ -1,0 +1,2 @@
+- Time Tracker Pro now runs on Ubuntu. Download the `.deb` file below to install it.
+- Update notes in Settings now display without extra blank lines.

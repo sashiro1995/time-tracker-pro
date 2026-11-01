@@ -1,6 +1,6 @@
 {
   "name": "time-tracker-pro",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Desktop time tracker with goals, analytics and Stream Deck support",
   "homepage": "https://github.com/sashiro1995/time-tracker-pro",
   "main": "electron/main.js",
