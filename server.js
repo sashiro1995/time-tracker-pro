@@ -254,7 +254,7 @@ function getPomodoroSettings() {
   return {
     workDuration:          p.workDuration          || 1500,
     shortBreakDuration:    p.shortBreakDuration    || 300,
-    longBreakDuration:     p.longBreakDuration     || 1800,
+    longBreakDuration:     p.longBreakDuration     || 900,
     cyclesBeforeLongBreak: p.cyclesBeforeLongBreak || 4,
     autoStartBreaks:       !!p.autoStartBreaks,
     autoStartFocus:        !!p.autoStartFocus,

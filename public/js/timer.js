@@ -5,6 +5,7 @@ const Timer = (() => {
   let allTimers     = [];    // array of active timer objects from server
   let allCategories = [];
   let ws            = null;
+  const FALLBACK_DURATION = 1800;  // matches server.js /api/timer/toggle default
   let selectedDuration = 1500;
 
   function isPomodoroActive() {
@@ -380,11 +381,14 @@ const Timer = (() => {
     if (catId) AlertSound.applyForCategory(catId);
   }
 
+  // A category shows its own saved length. "No category", or a category that
+  // has none yet, shows 30 min (the same default the Stream Deck uses), so a
+  // length left over from the previous category never carries across.
   function applyDurationForCategory(categoryId) {
-    if (categoryId === '__none__') return;
-    const cat = allCategories.find(c => c.id === categoryId);
-    if (!cat || !cat.defaultDuration) return;
-    selectedDuration = cat.defaultDuration;
+    const cat = categoryId !== '__none__'
+      ? allCategories.find(c => c.id === categoryId)
+      : null;
+    selectedDuration = cat?.defaultDuration || FALLBACK_DURATION;
     document.querySelectorAll('.btn-preset').forEach(b => b.classList.remove('is-active'));
     const match = [...document.querySelectorAll('.btn-preset')]
       .find(b => parseInt(b.dataset.seconds) === selectedDuration);
