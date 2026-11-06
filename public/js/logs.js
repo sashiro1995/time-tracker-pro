@@ -23,6 +23,28 @@ const Logs = (() => {
     return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   }
 
+  function shortTime(iso) {
+    return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  }
+
+  // "1:00 PM – 3:00 PM": when the session started and when it ended
+  function fmtRange(s) {
+    if (!s.endTime) return fmtTime(s.startTime);
+    return `${shortTime(s.startTime)} – ${shortTime(s.endTime)}`;
+  }
+
+  // "Paused 1h 0m (1:15 PM – 2:15 PM)" for sessions that were paused along the way
+  function pauseLine(s) {
+    const pauses = (s.pauses || []).filter(p => p.start && p.end);
+    if (!pauses.length) return '';
+    const secs = pauses.reduce((sum, p) => sum + (new Date(p.end) - new Date(p.start)) / 1000, 0);
+    if (secs < 60) return '';
+    const detail = pauses.length === 1
+      ? `(${shortTime(pauses[0].start)} – ${shortTime(pauses[0].end)})`
+      : `(${pauses.length} pauses)`;
+    return `<div class="log-entry__pause"><i data-lucide="pause" aria-hidden="true"></i>Paused ${fmtDuration(secs)} ${detail}</div>`;
+  }
+
   function groupByDay(sessions) {
     const map = {};
     sessions.forEach(s => {
@@ -86,7 +108,7 @@ const Logs = (() => {
         const cat     = categories.find(c => c.id === s.categoryId);
         const color   = cat ? cat.color : '#6366F1';
         const catName = esc(cat ? cat.name : s.categoryId);
-        const note    = s.note ? `<div class="log-entry__note">${esc(s.note)}</div>` : '';
+        const note    = (s.note ? `<div class="log-entry__note">${esc(s.note)}</div>` : '') + pauseLine(s);
         const checked = selectedIds.has(s.id);
 
         if (selectMode) {
@@ -103,7 +125,7 @@ const Logs = (() => {
                 </div>
                 ${note}
               </div>
-              <div class="log-entry__time">${fmtTime(s.startTime)}</div>
+              <div class="log-entry__time">${fmtRange(s)}</div>
               <div class="log-entry__duration">${fmtDuration(s.durationSeconds)}</div>
             </div>`;
         }
@@ -119,7 +141,7 @@ const Logs = (() => {
               </div>
               ${note}
             </div>
-            <div class="log-entry__time">${fmtTime(s.startTime)}</div>
+            <div class="log-entry__time">${fmtRange(s)}</div>
             <div class="log-entry__duration">${fmtDuration(s.durationSeconds)}</div>
             <button class="btn btn--icon log-entry__edit" data-edit-session="${s.id}" aria-label="Edit ${catName} session" title="Edit session">
               <i data-lucide="pencil"></i>

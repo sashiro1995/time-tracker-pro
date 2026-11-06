@@ -145,7 +145,8 @@ function safeRegularTimers() {
 }
 
 function saveTimers() {
-  write(DATA.timers, allSafeTimers());
+  const savedAt = new Date().toISOString();
+  write(DATA.timers, allSafeTimers().map(t => ({ ...t, savedAt })));
 }
 
 function saveStopwatch() {
@@ -172,13 +173,66 @@ function startSwTick() {
   }, 1000);
 }
 
+// Each timer keeps a list of its pauses, so a session that was paused at 1:15 and
+// resumed at 2:15 is logged as 1:00–3:00 with the 1:15–2:15 gap recorded.
+function markPaused(t, at = new Date().toISOString()) {
+  t.pausedAt = at;
+  if (!Array.isArray(t.pauses)) t.pauses = [];
+  const last = t.pauses[t.pauses.length - 1];
+  if (!last || last.end) t.pauses.push({ start: at, end: null });
+}
+
+function markResumed(t) {
+  t.pausedAt = null;
+  const last = Array.isArray(t.pauses) ? t.pauses[t.pauses.length - 1] : null;
+  if (last && !last.end) last.end = new Date().toISOString();
+}
+
+// Sessions shorter than this are dropped: a stop that quick means something else came up
+const MIN_LOG_SECONDS = 60;
+
+// Builds the log entry for a timer that finished or was stopped.
+// Stopping while paused ends the session when the pause began, not when Stop was pressed.
+function buildSession(t, source) {
+  const pauses = (t.pauses || []).filter(p => p.start);
+  const open   = pauses.length && !pauses[pauses.length - 1].end ? pauses.pop() : null;
+  const session = {
+    id: uuidv4(),
+    categoryId: t.categoryId,
+    startTime:  t.startedAt,
+    endTime:    open ? open.start : new Date().toISOString(),
+    durationSeconds: t.durationSeconds - t.remainingSeconds,
+    note:   t.note,
+    source,
+  };
+  const kept = pauses.filter(p => new Date(p.end) - new Date(p.start) >= 1000);
+  if (kept.length) session.pauses = kept;
+  return session;
+}
+
+// Why a timer's time wasn't logged, or null when it should be
+function skipReason(t, categoryId) {
+  const elapsed = t.durationSeconds - t.remainingSeconds;
+  const isBreakPhase = t.pomodoroPhase === 'short-break' || t.pomodoroPhase === 'long-break';
+  if (elapsed <= 0 || isBreakPhase) return 'nothing';
+  if (categoryId === '__none__') return 'no-category';
+  if (elapsed < MIN_LOG_SECONDS) return 'short';
+  return null;
+}
+
+function saveSession(session) {
+  const data = read(DATA.logs);
+  data.sessions.push(session);
+  write(DATA.logs, data);
+}
+
 // Pause any currently running timer (only one can run at a time)
 function pauseRunning() {
   for (const t of timers.values()) {
     if (t.status === 'running') {
       clearInterval(t.interval);
       t.status   = 'paused';
-      t.pausedAt = new Date().toISOString();
+      markPaused(t);
     }
   }
 }
@@ -249,23 +303,12 @@ function finishTimerForCat(categoryId) {
   const t = timers.get(categoryId);
   if (!t) return;
   clearInterval(t.interval);
-  const elapsed = t.durationSeconds - t.remainingSeconds;
-  const isBreakPhase = t.pomodoroPhase === 'short-break' || t.pomodoroPhase === 'long-break';
   const pomodoroPhase = t.pomodoroPhase;
   let session = null;
-  if (elapsed > 0 && categoryId !== '__none__' && !isBreakPhase) {
-    session = {
-      id: uuidv4(),
-      categoryId: t.categoryId,
-      startTime:  t.startedAt,
-      endTime:    new Date().toISOString(),
-      durationSeconds: elapsed,
-      note:   t.note,
-      source: pomodoroStates.has(categoryId) ? 'pomodoro' : 'app',
-    };
-    const data = read(DATA.logs);
-    data.sessions.push(session);
-    write(DATA.logs, data);
+  const skipped = skipReason(t, categoryId);
+  if (!skipped) {
+    session = buildSession(t, pomodoroStates.has(categoryId) ? 'pomodoro' : 'app');
+    saveSession(session);
   }
   timers.delete(categoryId);
   if (pomodoroPhase && pomodoroStates.has(categoryId)) {
@@ -285,40 +328,29 @@ function finishTimerForCat(categoryId) {
   } else {
     if (categoryId !== '__none__') justFinished.add(categoryId);
     saveTimers();
-    broadcast({ type: 'timer:finished', session, timers: allSafeTimers() });
+    broadcast({ type: 'timer:finished', session, categoryId, skipped, timers: allSafeTimers() });
   }
 }
 
 // Stops the countdown and saves the time spent so far (breaks aren't logged)
 function logStoppedTimer(t, categoryId, source) {
   clearInterval(t.interval);
-  const elapsed = t.durationSeconds - t.remainingSeconds;
-  const isBreakPhase = t.pomodoroPhase === 'short-break' || t.pomodoroPhase === 'long-break';
-  if (elapsed <= 0 || categoryId === '__none__' || isBreakPhase) return null;
-  const session = {
-    id: uuidv4(),
-    categoryId: t.categoryId,
-    startTime:  t.startedAt,
-    endTime:    new Date().toISOString(),
-    durationSeconds: elapsed,
-    note:   t.note,
-    source: pomodoroStates.has(categoryId) ? 'pomodoro' : source,
-  };
-  const data = read(DATA.logs);
-  data.sessions.push(session);
-  write(DATA.logs, data);
-  return session;
+  const skipped = skipReason(t, categoryId);
+  if (skipped) return { session: null, skipped };
+  const session = buildSession(t, pomodoroStates.has(categoryId) ? 'pomodoro' : source);
+  saveSession(session);
+  return { session, skipped: null };
 }
 
 function stopAndLogTimer(categoryId, source) {
   const t = timers.get(categoryId);
   if (!t) return null;
-  const session = logStoppedTimer(t, categoryId, source);
+  const { session, skipped } = logStoppedTimer(t, categoryId, source);
   const wasPomodoro = pomodoroStates.has(categoryId);
   pomodoroStates.delete(categoryId);
   timers.delete(categoryId);
   saveTimers();
-  broadcast({ type: 'timer:stopped', session, timers: allSafeTimers() });
+  broadcast({ type: 'timer:stopped', session, categoryId, skipped, timers: allSafeTimers() });
   if (wasPomodoro) broadcast({ type: 'timer:pomodoro-stopped', categoryId, timers: allSafeTimers() });
   return session;
 }
@@ -330,6 +362,8 @@ if (fs.existsSync(DATA.timers)) {
     const saved = JSON.parse(fs.readFileSync(DATA.timers, 'utf8'));
     if (Array.isArray(saved)) {
       saved.forEach(t => {
+        // A timer that was running when the app closed counts as paused from that moment
+        if (t.status === 'running') markPaused(t, t.savedAt || new Date().toISOString());
         t.status   = 'paused';  // always restore as paused
         t.interval = null;
         timers.set(t.categoryId, t);
@@ -468,7 +502,7 @@ app.get('/api/timer/toggle', (req, res) => {
   if (t.status === 'running') {
     clearInterval(t.interval);
     t.status   = 'paused';
-    t.pausedAt = new Date().toISOString();
+    markPaused(t);
     saveTimers();
     broadcast({ type: 'timer:paused', timer: safeTimerObj(t), timers: allSafeTimers() });
     return toggleResponse(res, 'paused');
@@ -478,7 +512,7 @@ app.get('/api/timer/toggle', (req, res) => {
   if (t.status === 'paused') {
     pauseRunning();
     t.status   = 'running';
-    t.pausedAt = null;
+    markResumed(t);
     t.interval = setInterval(makeTickFn(categoryId), 1000);
     saveTimers();
     broadcast({ type: 'timer:started', timer: safeTimerObj(t), timers: allSafeTimers() });
@@ -497,7 +531,7 @@ app.get('/api/timer/start', (req, res) => {
   if (existing && existing.status === 'paused') {
     pauseRunning();
     existing.status   = 'running';
-    existing.pausedAt = null;
+    markResumed(existing);
     existing.interval = setInterval(makeTickFn(categoryId), 1000);
     saveTimers();
     broadcast({ type: 'timer:started', timer: safeTimerObj(existing), timers: allSafeTimers() });
@@ -534,7 +568,7 @@ app.post('/api/timer/start', (req, res) => {
     if (existing.status === 'paused') {
       pauseRunning();
       existing.status   = 'running';
-      existing.pausedAt = null;
+      markResumed(existing);
       existing.interval = setInterval(makeTickFn(catId), 1000);
       saveTimers();
       broadcast({ type: 'timer:started', timer: safeTimerObj(existing), timers: allSafeTimers() });
@@ -579,7 +613,7 @@ app.get('/api/timer/pause', (req, res) => {
   if (!t || t.status !== 'running') return res.status(400).json({ error: 'No running timer' });
   clearInterval(t.interval);
   t.status   = 'paused';
-  t.pausedAt = new Date().toISOString();
+  markPaused(t);
   saveTimers();
   broadcast({ type: 'timer:paused', timer: safeTimerObj(t), timers: allSafeTimers() });
   res.json(safeTimerObj(t));
@@ -631,10 +665,11 @@ app.get('/api/pomodoro/skip', (req, res) => {
   const skipped = t?.pomodoroPhase || ps.phase;
   let session = null;
   if (t) {
-    session = logStoppedTimer(t, catId, 'app');
+    const result = logStoppedTimer(t, catId, 'app');
+    session = result.session;
     timers.delete(catId);
     saveTimers();
-    broadcast({ type: 'timer:stopped', session, timers: allSafeTimers() });
+    broadcast({ type: 'timer:stopped', session, categoryId: catId, skipped: result.skipped, timers: allSafeTimers() });
   }
   moveToNextPhase(ps, skipped, getPomodoroSettings());
   ps.waitingForNext = true;

@@ -86,16 +86,19 @@ const Charts = (() => {
   }
 
   // Calls fn(date, seconds) once per clock hour a session overlaps.
+  // Paused stretches are skipped, so they don't count toward the hours they fell in.
   function forEachHourSlice(session, fn) {
-    let cursor = new Date(session.startTime);
-    let left = session.durationSeconds;
-    while (left > 0) {
-      const secsIntoHour = cursor.getMinutes() * 60 + cursor.getSeconds();
-      const slice = Math.min(left, 3600 - secsIntoHour);
-      fn(cursor, slice);
-      left -= slice;
-      cursor = new Date(cursor.getTime() + slice * 1000);
-    }
+    sessionSegments(session).forEach(seg => {
+      let cursor = seg.start;
+      let left = seg.seconds;
+      while (left > 0) {
+        const secsIntoHour = cursor.getMinutes() * 60 + cursor.getSeconds();
+        const slice = Math.min(left, 3600 - secsIntoHour);
+        fn(cursor, slice);
+        left -= slice;
+        cursor = new Date(cursor.getTime() + slice * 1000);
+      }
+    });
   }
 
   function hourLabel(h) {

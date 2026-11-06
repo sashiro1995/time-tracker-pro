@@ -1,2 +1,4 @@
-- Time Tracker Pro now runs on Ubuntu. Download the `.deb` file below to install it.
-- Update notes in Settings now display without extra blank lines.
+- A "Stop sound" button now appears at the top of the screen when a timer finishes, so you no longer have to start a new session to silence the alarm.
+- Stopping a timer early logs the time you spent. Anything under a minute isn't logged, and you're told when a session isn't logged.
+- Log time now has "Started at" and "Finished at", and works out the duration for you.
+- Pauses are saved with each session. The Log shows when a session started and ended and how long it was paused, and the Dashboard timeline leaves the pause as a gap.

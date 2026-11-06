@@ -78,3 +78,21 @@ const API = {
     stop:        ()              => API.get('/api/stopwatch/stop'),
   },
 };
+
+// The stretches of a session that were actually worked, as [{ start: Date, seconds }].
+// A session paused 1:15–2:15 inside 1:00–3:00 gives 1:00 (15m) and 2:15 (45m).
+function sessionSegments(s) {
+  const pauses = (s.pauses || []).filter(p => p.start && p.end);
+  if (!pauses.length) return [{ start: new Date(s.startTime), seconds: s.durationSeconds }];
+  const segments = [];
+  let cursor = new Date(s.startTime).getTime();
+  let left = s.durationSeconds;
+  pauses.forEach(p => {
+    const secs = Math.min(left, Math.max(0, (new Date(p.start).getTime() - cursor) / 1000));
+    if (secs > 0) segments.push({ start: new Date(cursor), seconds: secs });
+    left -= secs;
+    cursor = Math.max(cursor, new Date(p.end).getTime());
+  });
+  if (left > 0) segments.push({ start: new Date(cursor), seconds: left });
+  return segments;
+}

@@ -337,14 +337,17 @@ const App = (() => {
     const pctOfDay = secs => (secs / 86400) * 100;
     const nowPct = pctOfDay((Date.now() - dayStart) / 1000);
 
-    const blocks = todaySessions.map(s => {
+    // A paused session draws one block per worked stretch, with the pause left empty
+    const blocks = todaySessions.flatMap(s => {
       const cat = getCategoryById(s.categoryId);
       const color = cat ? cat.color : 'var(--text-muted)';
-      const left = pctOfDay((new Date(s.startTime) - dayStart) / 1000);
-      const width = Math.min(pctOfDay(s.durationSeconds), 100 - left);
-      const startLabel = new Date(s.startTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-      return `<div class="daybar__block" style="left:${left}%;width:${width}%;background:${color}"
-                   title="${esc(cat ? cat.name : s.categoryId)}: ${fmtHours(s.durationSeconds)} from ${startLabel}"></div>`;
+      return sessionSegments(s).map(seg => {
+        const left = Math.max(0, pctOfDay((seg.start - dayStart) / 1000));
+        const width = Math.min(pctOfDay(seg.seconds), 100 - left);
+        const startLabel = seg.start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        return `<div class="daybar__block" style="left:${left}%;width:${width}%;background:${color}"
+                     title="${esc(cat ? cat.name : s.categoryId)}: ${fmtHours(seg.seconds)} from ${startLabel}"></div>`;
+      });
     }).join('');
 
     const totals = categories

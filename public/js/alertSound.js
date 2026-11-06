@@ -39,10 +39,39 @@ const AlertSound = (() => {
   }
 
   // ── Alert sound ───────────────────────────────────────────────────────────
+  // A bar with a Stop sound button shows while the alert plays, on every screen,
+  // so silencing it never means starting another session.
+  function showStopBar() {
+    let bar = document.getElementById('alertStopBar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'alertStopBar';
+      bar.className = 'alert-stop-bar';
+      bar.setAttribute('role', 'status');
+      bar.innerHTML = `
+        <i data-lucide="bell-ring" aria-hidden="true"></i>
+        <span class="alert-stop-bar__text">Time's up</span>
+        <button type="button" class="btn btn--primary btn--sm alert-stop-bar__btn" id="btnAlertStop">
+          <i data-lucide="volume-x" aria-hidden="true"></i>Stop sound
+        </button>`;
+      document.body.appendChild(bar);
+      bar.querySelector('#btnAlertStop').addEventListener('click', stop);
+      if (window.lucide) lucide.createIcons({ nodes: [bar] });
+    }
+    bar.hidden = false;
+  }
+
+  function hideStopBar() {
+    const bar = document.getElementById('alertStopBar');
+    if (bar) bar.hidden = true;
+  }
+
   function play() {
     stop();
     if (!alertSoundPath) return;
     alertAudio = new Audio(alertSoundPath);
+    alertAudio.addEventListener('ended', () => { if (alertAudio && !alertAudio.loop) stop(); });
+    showStopBar();
     if (alertSoundMode === 'loop') {
       alertAudio.loop = true;
       alertAudio.play().catch(() => {});
@@ -58,11 +87,14 @@ const AlertSound = (() => {
     stop();
     if (!alertSoundPath) return;
     alertAudio = new Audio(alertSoundPath);
+    alertAudio.addEventListener('ended', stop);
+    showStopBar();
     alertAudio.play().catch(() => {});
     alertSoundTimer = setTimeout(stop, alertSoundDuration * 1000);
   }
 
   function stop() {
+    hideStopBar();
     if (alertSoundTimer) {
       clearTimeout(alertSoundTimer);
       alertSoundTimer = null;

@@ -71,6 +71,8 @@ const Timer = (() => {
         if (typeof Pomodoro !== 'undefined') Pomodoro.handleWS(msg);
       }
 
+      if (msg.type === 'timer:finished' || msg.type === 'timer:stopped') explainSkipped(msg.skipped);
+
       if (msg.type === 'timer:finished') {
         if (!isPomodoroActive()) {
           AlertSound.play();
@@ -88,6 +90,12 @@ const Timer = (() => {
       }
     });
     ws.addEventListener('close', () => setTimeout(connectWS, 2000));
+  }
+
+  // Says why a finished or stopped timer didn't reach the Log
+  function explainSkipped(reason) {
+    if (reason === 'short')       App.showToast('Under a minute, so it wasn\'t logged', 4000);
+    if (reason === 'no-category') App.showToast('Not logged: pick a category to log your time', 5000);
   }
 
   // ── State helpers ──────────────────────────────────────────────────────────

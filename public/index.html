@@ -750,29 +750,25 @@
       </div>
 
       <div class="form-row">
-        <span class="form-label">How long</span>
-        <div class="session-form__duration">
-          <div class="session-form__chips" id="sessionChips" role="group" aria-label="Common durations">
-            <button type="button" class="btn-preset" data-session-minutes="30">30m</button>
-            <button type="button" class="btn-preset" data-session-minutes="60">1h</button>
-            <button type="button" class="btn-preset" data-session-minutes="120">2h</button>
-          </div>
-          <div class="session-form__amount">
-            <label class="session-form__unit">
-              <input class="form-input" id="sessionHours" type="number" min="0" max="24" placeholder="0" aria-label="Hours" />
-              <span>hours</span>
-            </label>
-            <label class="session-form__unit">
-              <input class="form-input" id="sessionMinutes" type="number" min="0" max="59" placeholder="0" aria-label="Minutes" />
-              <span>minutes</span>
-            </label>
-          </div>
-        </div>
+        <label class="form-label" for="sessionStart">Started at</label>
+        <input class="form-input" id="sessionStart" type="datetime-local" />
       </div>
 
       <div class="form-row">
         <label class="form-label" for="sessionEnd">Finished at</label>
         <input class="form-input" id="sessionEnd" type="datetime-local" />
+      </div>
+
+      <div class="form-row">
+        <span class="form-label">Quick fill <span class="form-label--optional">(ending at the finish time)</span></span>
+        <div class="session-form__chips" id="sessionChips" role="group" aria-label="Common durations">
+          <button type="button" class="btn-preset" data-session-minutes="15">15m</button>
+          <button type="button" class="btn-preset" data-session-minutes="30">30m</button>
+          <button type="button" class="btn-preset" data-session-minutes="45">45m</button>
+          <button type="button" class="btn-preset" data-session-minutes="60">1h</button>
+          <button type="button" class="btn-preset" data-session-minutes="120">2h</button>
+        </div>
+        <p class="session-form__total" id="sessionTotal" aria-live="polite"></p>
       </div>
 
       <div class="form-row">
