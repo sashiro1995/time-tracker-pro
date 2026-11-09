@@ -1,4 +1,5 @@
-- A "Stop sound" button now appears at the top of the screen when a timer finishes, so you no longer have to start a new session to silence the alarm.
-- Stopping a timer early logs the time you spent. Anything under a minute isn't logged, and you're told when a session isn't logged.
-- Log time now has "Started at" and "Finished at", and works out the duration for you.
-- Pauses are saved with each session. The Log shows when a session started and ended and how long it was paused, and the Dashboard timeline leaves the pause as a gap.
+- Dashboard is now Today: live timer controls, recurring goals, long-term goal progress, and upcoming trackers in one place.
+- New Trackers screen for countdowns, things that run out, and days since recurring tasks. Includes cycle history, costs, search, archive, and timeline, cards, and table layouts.
+- Long-term goal journeys show milestones, recent pace, an estimated finish date, and an optional date to start counting hours from.
+- Local diagnostic event logs help trace unexpected alert sounds to timer events, shortcuts, and individual app/browser windows. Logs rotate automatically and exclude note text.
+- Fixed the Pomodoro long-break fallback and the timer length when switching to No category. Number fields now select their existing value for easier editing.

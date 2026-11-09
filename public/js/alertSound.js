@@ -9,6 +9,19 @@ const AlertSound = (() => {
   let onSoundSettingsLoaded = null;
   let allCategories = [];
 
+  // Per page load: shared with the WebSocket so connection and sound events match.
+  const WIN_ID = Math.random().toString(36).slice(2, 10).padEnd(8, '0');
+  const WIN_KIND = navigator.userAgent.includes('Electron') ? 'app-window' : 'browser';
+  function report(action, extra) {
+    try {
+      fetch('/api/diag/sound', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true,
+        body: JSON.stringify({ action, mode: alertSoundMode, win: WIN_ID, kind: WIN_KIND,
+          visible: document.visibilityState, ...extra }),
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   // ── Sound row UI ──────────────────────────────────────────────────────────
   function updateSoundRowUI() {
     const row     = document.querySelector('.sound-row');
@@ -55,7 +68,7 @@ const AlertSound = (() => {
           <i data-lucide="volume-x" aria-hidden="true"></i>Stop sound
         </button>`;
       document.body.appendChild(bar);
-      bar.querySelector('#btnAlertStop').addEventListener('click', stop);
+      bar.querySelector('#btnAlertStop').addEventListener('click', () => stop('stop-button'));
       if (window.lucide) lucide.createIcons({ nodes: [bar] });
     }
     bar.hidden = false;
@@ -66,9 +79,10 @@ const AlertSound = (() => {
     if (bar) bar.hidden = true;
   }
 
-  function play() {
-    stop();
+  function play(trigger = 'unknown') {
+    stop('replaced');
     if (!alertSoundPath) return;
+    report('play', { trigger });
     alertAudio = new Audio(alertSoundPath);
     alertAudio.addEventListener('ended', () => { if (alertAudio && !alertAudio.loop) stop(); });
     showStopBar();
@@ -79,21 +93,23 @@ const AlertSound = (() => {
       alertAudio.play().catch(() => {});
     } else if (alertSoundMode === 'duration') {
       alertAudio.play().catch(() => {});
-      alertSoundTimer = setTimeout(stop, alertSoundDuration * 1000);
+      alertSoundTimer = setTimeout(() => stop('duration-limit'), alertSoundDuration * 1000);
     }
   }
 
-  function playOnce() {
-    stop();
+  function playOnce(trigger = 'unknown') {
+    stop('replaced');
     if (!alertSoundPath) return;
+    report('play', { trigger, mode: 'once-auto' });
     alertAudio = new Audio(alertSoundPath);
     alertAudio.addEventListener('ended', stop);
     showStopBar();
     alertAudio.play().catch(() => {});
-    alertSoundTimer = setTimeout(stop, alertSoundDuration * 1000);
+    alertSoundTimer = setTimeout(() => stop('duration-limit'), alertSoundDuration * 1000);
   }
 
-  function stop() {
+  function stop(reason) {
+    if (alertAudio) report('stop', { reason: typeof reason === 'string' ? reason : 'ended' });
     hideStopBar();
     if (alertSoundTimer) {
       clearTimeout(alertSoundTimer);
@@ -158,6 +174,7 @@ const AlertSound = (() => {
   }
 
   return {
+    windowId: WIN_ID,
     play,
     stop,
     playOnce,

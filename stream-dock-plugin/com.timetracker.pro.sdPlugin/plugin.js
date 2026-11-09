@@ -65,7 +65,7 @@ async function onKeyDown(context, action) {
   if (!online) { flashAlert(context); return; }
 
   const { categoryId } = contexts[context]?.settings ?? {};
-  const cat = categoryId ? `?category=${encodeURIComponent(categoryId)}` : '';
+  const cat = categoryId ? `?category=${encodeURIComponent(categoryId)}&src=streamdock` : '?src=streamdock';
 
   let url;
   if (action === 'com.timetracker.pro.stopwatch') {

@@ -1,5 +1,4 @@
 const Charts = (() => {
-  let weekChart    = null;
   let dailyChart   = null;
   let doughnutChart = null;
 
@@ -220,49 +219,6 @@ const Charts = (() => {
 
   function surfaceColor() { return css('--bg-surface'); }
 
-  // ── Week chart (Dashboard) ─────────────────────────────────────────────────
-  // Monday–Sunday of the current week, matching the "This week" total above it.
-  function renderWeekChart(sessions, categories) {
-    const ctx = document.getElementById('weekChart');
-    if (!ctx) return;
-    syncThemeDefaults();
-
-    const monday = new Date();
-    monday.setDate(monday.getDate() + (monday.getDay() === 0 ? -6 : 1 - monday.getDay()));
-    const days = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
-      return isoDate(d);
-    });
-    const todayIdx = days.indexOf(isoDate(new Date()));
-
-    const valuesByCat = {};
-    categories.filter(c => !c.archived).forEach(cat => {
-      valuesByCat[cat.id] = days.map(day =>
-        secsToHours(sessions.filter(s => s.categoryId === cat.id && sessionDay(s) === day)));
-    });
-    const cats = categories.filter(c => !c.archived && valuesByCat[c.id].some(v => v > 0));
-
-    const legend = document.getElementById('weekLegend');
-    if (legend) legend.innerHTML = legendHTML(cats);
-    setEmpty(ctx, cats.length === 0);
-
-    const primary = css('--text-primary');
-    const secondary = css('--text-secondary');
-    if (weekChart) weekChart.destroy();
-    weekChart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: days.map(d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' })),
-        datasets: buildStackedDatasets(cats, valuesByCat, surfaceColor()),
-      },
-      options: stackedOptions(maxStack(cats, valuesByCat), {
-        color: c => (c.index === todayIdx ? primary : secondary),
-        font: c => ({ weight: c.index === todayIdx ? '600' : '400' }),
-      }),
-    });
-  }
-
   // ── Time chart (Analytics) ─────────────────────────────────────────────────
   // from / to are Date objects. Auto-groups: hourly 1d, daily ≤31d, weekly ≤90d, monthly >90d.
   function renderDailyChart(sessions, categories, from, to) {
@@ -377,5 +333,5 @@ const Charts = (() => {
     });
   }
 
-  return { renderWeekChart, renderDailyChart, renderDoughnutChart, forEachHourSlice, hourLabel, fmtDur, esc };
+  return { renderDailyChart, renderDoughnutChart, forEachHourSlice, hourLabel, fmtDur, esc };
 })();

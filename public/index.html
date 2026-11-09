@@ -27,9 +27,9 @@
     </div>
 
     <nav class="sidebar__nav">
-      <a href="#" class="sidebar__nav-item is-active" data-screen="dashboard" aria-current="page" aria-label="Dashboard">
-        <i data-lucide="layout-dashboard"></i>
-        <span>Dashboard</span>
+      <a href="#" class="sidebar__nav-item is-active" data-screen="dashboard" aria-current="page" aria-label="Today">
+        <i data-lucide="sun"></i>
+        <span>Today</span>
       </a>
       <a href="#" class="sidebar__nav-item" data-screen="analytics" aria-label="Analytics">
         <i data-lucide="bar-chart-2"></i>
@@ -58,6 +58,10 @@
       <a href="#" class="sidebar__nav-item" data-screen="goals" aria-label="Goals">
         <i data-lucide="target"></i>
         <span>Goals</span>
+      </a>
+      <a href="#" class="sidebar__nav-item" data-screen="trackers" aria-label="Trackers">
+        <i data-lucide="hourglass"></i>
+        <span>Trackers</span>
       </a>
       <a href="#" class="sidebar__nav-item" data-screen="notes" aria-label="Notes">
         <i data-lucide="notebook-pen"></i>
@@ -90,54 +94,44 @@
   <main class="main" id="main">
 
     <!-- Dashboard -->
-    <section class="screen" id="screen-dashboard" aria-label="Dashboard">
+    <section class="screen" id="screen-dashboard" aria-label="Today">
       <header class="screen__header">
-        <h1 class="screen__title">Dashboard</h1>
+        <h1 class="screen__title">Today</h1>
         <p class="screen__subtitle" id="dashboardDate">—</p>
       </header>
 
-      <div class="card today">
-        <div class="today__head">
-          <div class="today__hero">
-            <div class="label">Today</div>
-            <div class="today__value" id="statToday">0m</div>
-          </div>
-          <dl class="today__stats">
-            <div class="today__stat">
-              <dt class="label">This week</dt>
-              <dd class="today__stat-value" id="statWeek">0m</dd>
-              <dd class="today__stat-note" id="statWeekNote"></dd>
-            </div>
-            <div class="today__stat">
-              <dt class="label">Sessions today</dt>
-              <dd class="today__stat-value" id="statSessions">0</dd>
-              <dd class="today__stat-note" id="statSessionsNote"></dd>
-            </div>
-          </dl>
-        </div>
-        <div id="todayTimeline"></div>
-      </div>
+      <!-- Live timers with Pause/Stop; hidden while nothing runs -->
+      <div class="card in-progress" id="todayInProgress" hidden></div>
 
-      <div id="dashboardGoals"></div>
-
-      <div class="cards-row cards-row--wide-left">
-        <div class="card">
-          <div class="card__head">
-            <h2 class="card__title">This week</h2>
-          </div>
-          <div class="chart-wrap" data-empty-text="Nothing tracked yet this week"><canvas id="weekChart" role="img" aria-label="Hours tracked each day this week, stacked by category"></canvas></div>
-          <div class="chart-legend" id="weekLegend"></div>
-        </div>
-        <div class="card">
-          <div class="card__head">
-            <h2 class="card__title">Where the time went</h2>
-            <div class="segmented segmented--sm" id="breakdownRange" role="group" aria-label="Breakdown range">
-              <button class="segmented__btn" data-days="7">7d</button>
-              <button class="segmented__btn is-active" data-days="30">30d</button>
-              <button class="segmented__btn" data-days="all">All</button>
+      <!-- "Balanced bento": now + journey on the left, goals + coming up on the right -->
+      <div class="today-bento">
+        <div class="today-bento__col">
+          <div class="card today">
+            <div class="today__head">
+              <div class="today__hero">
+                <div class="today__value" id="statToday">0m</div>
+                <div class="today__value-label">Time today</div>
+              </div>
+              <dl class="today__stats">
+                <div class="today__stat">
+                  <dt class="label">This week</dt>
+                  <dd class="today__stat-value" id="statWeek">0m</dd>
+                  <dd class="today__stat-note" id="statWeekNote"></dd>
+                </div>
+                <div class="today__stat">
+                  <dt class="label">Sessions</dt>
+                  <dd class="today__stat-value" id="statSessions">0</dd>
+                  <dd class="today__stat-note" id="statSessionsNote"></dd>
+                </div>
+              </dl>
             </div>
+            <div id="todayTimeline"></div>
           </div>
-          <div id="categoryBreakdown" class="breakdown-list"></div>
+          <div class="card" id="todayJourney" hidden></div>
+        </div>
+        <div class="today-bento__col">
+          <div class="card goal-board" id="dashboardGoals" hidden></div>
+          <div class="card coming-up" id="todayComingUp"></div>
         </div>
       </div>
     </section>
@@ -479,6 +473,34 @@
     </section>
 
     <!-- Notes -->
+    <!-- Trackers -->
+    <section class="screen" id="screen-trackers" aria-label="Trackers" hidden>
+      <header class="screen__header">
+        <div>
+          <h1 class="screen__title">Trackers</h1>
+          <p class="screen__subtitle">Things that run out, expire, or need doing again</p>
+        </div>
+        <div class="screen__actions">
+          <button class="btn btn--primary" id="btnNewTracker"><i data-lucide="plus"></i> New tracker</button>
+        </div>
+      </header>
+      <div class="trackers-toolbar" id="trackersToolbar" hidden>
+        <div class="segmented" id="trackersFilter" role="group" aria-label="Show">
+          <button class="segmented__btn is-active" data-kind="all">All</button>
+          <button class="segmented__btn" data-kind="countdown">Countdowns</button>
+          <button class="segmented__btn" data-kind="runout">Runs out</button>
+          <button class="segmented__btn" data-kind="since">Days since</button>
+        </div>
+        <input class="form-input trackers-search" id="trackersSearch" type="search" placeholder="Search" aria-label="Search trackers" />
+        <div class="segmented trackers-layout" id="trackersLayout" role="group" aria-label="Layout">
+          <button class="segmented__btn is-active" data-layout="timeline" aria-pressed="true" aria-label="Timeline" title="Timeline: grouped by date"><i data-lucide="list-tree"></i></button>
+          <button class="segmented__btn" data-layout="cards" aria-pressed="false" aria-label="Cards" title="Cards: drag into your own order"><i data-lucide="layout-grid"></i></button>
+          <button class="segmented__btn" data-layout="table" aria-pressed="false" aria-label="Table" title="Table: compact, soonest first"><i data-lucide="table-2"></i></button>
+        </div>
+      </div>
+      <div id="trackersList"></div>
+    </section>
+
     <section class="screen" id="screen-notes" aria-label="Notes" hidden>
       <header class="screen__header">
         <h1 class="screen__title">Notes</h1>
@@ -802,6 +824,16 @@
   </div>
 
   <!-- Custom duration modal -->
+  <!-- Tracker details (side drawer, built by trackers.js) -->
+  <div class="drawer-backdrop" id="trackerDrawer" hidden>
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="trackerDrawerTitle" id="trackerDrawerBody"></aside>
+  </div>
+
+  <!-- New / edit tracker (built by trackers.js) -->
+  <div class="modal-backdrop" id="trackerModal" hidden role="dialog" aria-modal="true" aria-labelledby="trackerModalTitle">
+    <form class="modal tracker-form" id="trackerForm" novalidate></form>
+  </div>
+
   <div class="modal-backdrop" id="customDurationModal" hidden role="dialog" aria-modal="true" aria-labelledby="customDurationTitle">
     <div class="modal">
       <h2 class="modal__title" id="customDurationTitle">Custom Duration</h2>
@@ -832,6 +864,8 @@
   <script src="js/logs.js"></script>
   <script src="js/settings.js"></script>
   <script src="js/notes.js"></script>
+  <script src="js/journey.js"></script>
+  <script src="js/trackers.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

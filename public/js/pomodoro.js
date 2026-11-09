@@ -209,7 +209,7 @@ const Pomodoro = (() => {
       remainingSeconds = msg.duration;
       durationSeconds  = msg.duration;
       if (msg.categoryId) setSelectedCatId(msg.categoryId);
-      if (!msg.auto) AlertSound.stop();
+      if (!msg.auto) AlertSound.stop('ws-pomodoro-phase');
       render();
       refresh();
       return;
@@ -227,7 +227,7 @@ const Pomodoro = (() => {
       durationSeconds = 0;
       render();
       refresh();
-      AlertSound.play();
+      AlertSound.play('pomodoro-waiting');
       return;
     }
 
@@ -242,7 +242,7 @@ const Pomodoro = (() => {
       durationSeconds = 0;
       categoryId = null;
       note = '';
-      AlertSound.stop();
+      AlertSound.stop('ws-pomodoro-stopped');
       render();
       refresh();
       return;
@@ -282,7 +282,7 @@ const Pomodoro = (() => {
     const catId = active ? categoryId : getSelectedCatId();
     try {
       if (waitingForNext) {
-        AlertSound.stop();
+        AlertSound.stop('pomodoro-next');
         await API.get(`/api/pomodoro/next?category=${encodeURIComponent(catId)}`);
       } else if (paused) {
         await API.timer.start({ categoryId: catId });
@@ -398,7 +398,7 @@ const Pomodoro = (() => {
     });
 
     el('btnPomodoroScreenSkip')?.addEventListener('click', async () => {
-      AlertSound.stop();
+      AlertSound.stop('pomodoro-skip');
       try { await API.get(`/api/pomodoro/skip?category=${encodeURIComponent(categoryId)}`); }
       catch (err) { console.error(err); }
     });

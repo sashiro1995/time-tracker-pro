@@ -5,6 +5,7 @@ const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
+const { AsyncLocalStorage } = require('async_hooks');
 
 const app = express();
 const server = http.createServer(app);
@@ -25,6 +26,63 @@ for (const file of fs.readdirSync(DEFAULTS_DIR)) {
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Diagnostic events stay in the writable data folder, separate from session logs.
+// Keep one backup and never let logging failures interrupt timers or requests.
+const EVENTS_LOG = path.join(DATA_DIR, 'events.log');
+const EVENTS_LOG_MAX = 1024 * 1024;
+const requestContext = new AsyncLocalStorage();
+
+function stamp(d = new Date()) {
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+    `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+function logEvent(event, fields = {}) {
+  try {
+    const clean = value => String(value).replace(/[\s\x00-\x1f\x7f]+/g, '_').slice(0, 240);
+    const parts = Object.entries(fields)
+      .filter(([, v]) => v !== undefined && v !== null && v !== '')
+      .map(([k, v]) => `${k}=${clean(v)}`);
+    const line = `${stamp()}  ${clean(event).padEnd(26)} ${parts.join('  ')}\n`;
+    if (fs.existsSync(EVENTS_LOG) && fs.statSync(EVENTS_LOG).size + Buffer.byteLength(line) > EVENTS_LOG_MAX) {
+      fs.renameSync(EVENTS_LOG, path.join(DATA_DIR, 'events.old.log'));
+    }
+    fs.appendFileSync(EVENTS_LOG, line);
+  } catch (_) {}
+}
+
+function guessSource(req) {
+  if (typeof req.query.src === 'string' && /^[a-z0-9-]{1,32}$/i.test(req.query.src)) return req.query.src;
+  const ua = req.headers['user-agent'] || '';
+  if (!ua) return 'electron-main';
+  if (ua.includes('Electron')) return 'app-window';
+  if (ua.includes('Mozilla')) return 'browser';
+  return 'other';
+}
+
+app.use('/api', (req, res, next) => {
+  // Only retain diagnostic parameters; a URL may also contain a private note.
+  const source = new URLSearchParams();
+  if (typeof req.query.src === 'string' && /^[a-z0-9-]{1,32}$/i.test(req.query.src)) source.set('src', req.query.src);
+  const query = source.toString();
+  requestContext.run({ via: guessSource(req), route: `${req.method} ${req.originalUrl.split('?')[0]}${query ? '?' + query : ''}` }, next);
+});
+
+function catName(id) {
+  if (!id) return undefined;
+  try { return read(DATA.categories).categories.find(c => c.id === id)?.name || id; }
+  catch (_) { return id; }
+}
+
+wss.on('connection', (ws, req) => {
+  const kind = (req.headers['user-agent'] || '').includes('Electron') ? 'app-window' : 'browser';
+  const candidate = new URL(req.url, 'http://localhost').searchParams.get('win');
+  const win = /^[a-z0-9]{4,12}$/i.test(candidate || '') ? candidate : undefined;
+  logEvent('window:connected', { win, kind, windows: wss.clients.size });
+  ws.on('close', () => logEvent('window:disconnected', { win, kind, windows: wss.clients.size }));
+});
 
 // Custom sounds live in SOUNDS_DIR (writable); fall back to bundled public/sounds/
 app.get('/sounds/:file', (req, res) => {
@@ -47,6 +105,7 @@ const DATA = {
   timers:     path.join(DATA_DIR, 'timers.json'),
   stopwatch:  path.join(DATA_DIR, 'stopwatch.json'),
   notes:      path.join(DATA_DIR, 'notes.json'),
+  trackers:   path.join(DATA_DIR, 'trackers.json'),
 };
 
 function read(file)        { return JSON.parse(fs.readFileSync(file, 'utf8')); }
@@ -124,7 +183,26 @@ let armed = {
 const lastToggleMap = new Map();  // categoryId → last toggle timestamp (per-category double-tap)
 const DOUBLE_TAP_MS = 600;
 
+const QUIET_EVENTS = new Set(['timer:tick', 'stopwatch:tick', 'trackers:updated', 'timer:finished']);
+const startedVia = new Map(); // Diagnostic metadata only; never included in saved timers.
+
 function broadcast(payload) {
+  try {
+    if (!QUIET_EVENTS.has(payload.type)) {
+      const catId = payload.categoryId || payload.timer?.categoryId || payload.session?.categoryId || payload.stopwatch?.categoryId || payload.armed?.categoryId;
+      const source = requestContext.getStore();
+      const via = source?.via || 'countdown';
+      if (payload.type === 'timer:started' && catId) startedVia.set(catId, via);
+      logEvent(payload.type, {
+        category: catName(catId),
+        phase: payload.timer?.pomodoroPhase || payload.phase || payload.nextPhase,
+        duration: payload.timer?.durationSeconds ?? payload.duration ?? payload.armed?.durationSeconds,
+        auto: payload.auto ? 'yes' : undefined,
+        via, route: source?.route, windows: wss.clients.size,
+      });
+      if (payload.type === 'timer:stopped' && catId) startedVia.delete(catId);
+    }
+  } catch (_) {}
   const msg = JSON.stringify(payload);
   wss.clients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) client.send(msg);
@@ -166,11 +244,11 @@ function saveStopwatch() {
 }
 
 function startSwTick() {
-  swTickInterval = setInterval(() => {
+  swTickInterval = setInterval(() => requestContext.exit(() => {
     broadcast({ type: 'stopwatch:tick', stopwatch: safeStopwatch() });
     const elapsed = Math.floor(swElapsedMs() / 1000);
     if (elapsed > 0 && elapsed % 30 === 0) saveStopwatch();
-  }, 1000);
+  }), 1000);
 }
 
 // Each timer keeps a list of its pauses, so a session that was paused at 1:15 and
@@ -239,12 +317,16 @@ function pauseRunning() {
 
 function makeTickFn(categoryId) {
   return function tick() {
-    const t = timers.get(categoryId);
-    if (!t || t.status !== 'running') return;
-    t.remainingSeconds = Math.max(0, t.remainingSeconds - 1);
-    broadcast({ type: 'timer:tick', timer: safeTimerObj(t), timers: allSafeTimers() });
-    if (t.remainingSeconds % 30 === 0 && t.remainingSeconds > 0) saveTimers();
-    if (t.remainingSeconds === 0) finishTimerForCat(categoryId);
+    // Intervals inherit their creating request's async context. A later finish
+    // belongs to the countdown, even when a shortcut originally started it.
+    requestContext.exit(() => {
+      const t = timers.get(categoryId);
+      if (!t || t.status !== 'running') return;
+      t.remainingSeconds = Math.max(0, t.remainingSeconds - 1);
+      broadcast({ type: 'timer:tick', timer: safeTimerObj(t), timers: allSafeTimers() });
+      if (t.remainingSeconds % 30 === 0 && t.remainingSeconds > 0) saveTimers();
+      if (t.remainingSeconds === 0) finishTimerForCat(categoryId);
+    });
   };
 }
 
@@ -311,6 +393,12 @@ function finishTimerForCat(categoryId) {
     saveSession(session);
   }
   timers.delete(categoryId);
+  logEvent('timer:finished', {
+    category: catName(categoryId), phase: pomodoroPhase || 'timer',
+    logged: session ? 'yes' : 'no', skipped: skipped || undefined,
+    startedVia: startedVia.get(categoryId) || 'restored', windows: wss.clients.size,
+  });
+  startedVia.delete(categoryId);
   if (pomodoroPhase && pomodoroStates.has(categoryId)) {
     // Pomodoro: compute next phase but wait for user to press the button
     const ps = pomodoroStates.get(categoryId);
@@ -392,6 +480,7 @@ if (fs.existsSync(DATA.stopwatch)) {
 
 // Saves running time on quit or update; otherwise up to 30 seconds since the last save would be lost
 process.on('exit', () => {
+  logEvent('app:stopped');
   try {
     saveTimers();
     saveStopwatch();
@@ -856,6 +945,143 @@ app.delete('/api/notes/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Trackers API ("things that last") ─────────────────────────────────────────
+// One model for three kinds. A cycle is one bag / one trial / one "did it":
+//   countdown: cycles have a planned end date; "renew" adds the next one
+//   runout:    the open cycle has end null; "new" closes it today and opens another
+//   since:     each "done" closes the previous cycle today and starts a new one
+const TRACKER_KINDS = ['countdown', 'runout', 'since'];
+
+function readTrackers() {
+  try { return read(DATA.trackers); } catch { return { trackers: [] }; }
+}
+
+// Dates are local calendar days (YYYY-MM-DD); the server runs on the user's own PC
+function localToday() { return new Date().toLocaleDateString('sv'); }
+function addDays(iso, n) {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toLocaleDateString('sv');
+}
+function daysBetween(a, b) {
+  const [ya, ma, da] = a.split('-').map(Number);
+  const [yb, mb, db] = b.split('-').map(Number);
+  return Math.round((Date.UTC(yb, mb - 1, db) - Date.UTC(ya, ma - 1, da)) / 86400000);
+}
+const isDate = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+const numOrNull = v => (v === '' || v === null || v === undefined || isNaN(Number(v))) ? null : Number(v);
+
+function trackerId(name, existing) {
+  const base = String(name).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'tracker';
+  let id = base, n = 2;
+  while (existing.some(t => t.id === id)) id = `${base}-${n++}`;
+  return id;
+}
+
+app.get('/api/trackers', (req, res) => {
+  res.json(readTrackers());
+});
+
+app.post('/api/trackers', (req, res) => {
+  const { name, kind, icon, color, intervalDays, remindDaysBefore, start, end, cost } = req.body;
+  if (!name || !String(name).trim()) return res.status(400).json({ error: 'Name is required' });
+  if (!TRACKER_KINDS.includes(kind)) return res.status(400).json({ error: 'Unknown kind' });
+  const startDate = isDate(start) ? start : localToday();
+  if (kind === 'countdown' && (!isDate(end) || end < startDate)) {
+    return res.status(400).json({ error: 'A countdown needs an end date on or after its start' });
+  }
+
+  const data = readTrackers();
+  const tracker = {
+    id: trackerId(name, data.trackers),
+    name: String(name).trim(),
+    kind,
+    icon: icon || 'hourglass',
+    color: color || '#06B6D4',
+    intervalDays: numOrNull(intervalDays),
+    remindDaysBefore: numOrNull(remindDaysBefore),
+    archived: false,
+    createdAt: new Date().toISOString(),
+    cycles: [{ id: uuidv4(), start: startDate, end: kind === 'countdown' ? end : null, cost: numOrNull(cost) }],
+  };
+  data.trackers.push(tracker);
+  write(DATA.trackers, data);
+  broadcast({ type: 'trackers:updated' });
+  res.status(201).json(tracker);
+});
+
+// Edits a tracker. `cycles` may be sent whole (edit / delete one cycle from the history).
+app.put('/api/trackers/:id', (req, res) => {
+  const data = readTrackers();
+  const t = data.trackers.find(x => x.id === req.params.id);
+  if (!t) return res.status(404).json({ error: 'Not found' });
+  const b = req.body;
+  if (b.name !== undefined && String(b.name).trim()) t.name = String(b.name).trim();
+  if (b.icon !== undefined) t.icon = b.icon;
+  if (b.color !== undefined) t.color = b.color;
+  if (b.intervalDays !== undefined) t.intervalDays = numOrNull(b.intervalDays);
+  if (b.remindDaysBefore !== undefined) t.remindDaysBefore = numOrNull(b.remindDaysBefore);
+  if (b.archived !== undefined) t.archived = !!b.archived;
+  if (Array.isArray(b.cycles)) {
+    t.cycles = b.cycles
+      .filter(c => isDate(c.start))
+      .map(c => ({ id: c.id || uuidv4(), start: c.start, end: isDate(c.end) ? c.end : null, cost: numOrNull(c.cost), ...(c.note ? { note: String(c.note) } : {}) }))
+      .sort((a, b2) => a.start.localeCompare(b2.start));
+  }
+  write(DATA.trackers, data);
+  broadcast({ type: 'trackers:updated' });
+  res.json(t);
+});
+
+app.delete('/api/trackers/:id', (req, res) => {
+  const data = readTrackers();
+  data.trackers = data.trackers.filter(t => t.id !== req.params.id);
+  write(DATA.trackers, data);
+  broadcast({ type: 'trackers:updated' });
+  res.json({ ok: true });
+});
+
+// The one-click actions. GET works too, so a Stream Deck URL button can press them:
+//   /api/trackers/cat-food/act?action=new     /api/trackers/plants/act?action=done
+function trackerAction(req, res) {
+  const action = req.body?.action || req.query.action;
+  const date = isDate(req.body?.date) ? req.body.date : (isDate(req.query.date) ? req.query.date : localToday());
+  const cost = numOrNull(req.body?.cost ?? req.query.cost);
+
+  const data = readTrackers();
+  const t = data.trackers.find(x => x.id === req.params.id);
+  if (!t) return res.status(404).json({ error: 'Not found' });
+  const last = t.cycles[t.cycles.length - 1] || null;
+
+  if (t.kind === 'countdown' && action === 'renew') {
+    // Renewed early: the next period starts when this one ends. Renewed late: it starts today.
+    const length = t.intervalDays || (last ? Math.max(1, daysBetween(last.start, last.end)) : 30);
+    const start = last && last.end > date ? last.end : date;
+    t.cycles.push({ id: uuidv4(), start, end: addDays(start, length), cost: cost ?? last?.cost ?? null });
+    t.archived = false;
+  } else if (t.kind === 'countdown' && action === 'end') {
+    // Ended or cancelled: drop a renewal that hasn't started yet and archive it.
+    // The end date stays as it was (a cancelled trial usually runs to its end anyway).
+    while (t.cycles.length > 1 && t.cycles[t.cycles.length - 1].start > date) t.cycles.pop();
+    t.archived = true;
+  } else if (t.kind === 'runout' && (action === 'new' || action === 'finish')) {
+    if (last && !last.end) last.end = date;
+    if (action === 'new') t.cycles.push({ id: uuidv4(), start: date, end: null, cost: cost ?? last?.cost ?? null });
+  } else if (t.kind === 'since' && action === 'done') {
+    if (last && last.start === date) return res.json(t);   // already done today
+    if (last && !last.end) last.end = date;
+    t.cycles.push({ id: uuidv4(), start: date, end: null, cost });
+  } else {
+    return res.status(400).json({ error: `"${action}" doesn't apply to a ${t.kind} tracker` });
+  }
+
+  write(DATA.trackers, data);
+  broadcast({ type: 'trackers:updated' });
+  res.json(t);
+}
+app.post('/api/trackers/:id/act', trackerAction);
+app.get('/api/trackers/:id/act', trackerAction);
+
 // Saves the user's chosen preset duration so Stream Dock uses the same value
 app.post('/api/categories/:id/default-duration', (req, res) => {
   const dur  = parseInt(req.body.duration);
@@ -1118,6 +1344,34 @@ app.get('/api/logs/export', (req, res) => {
   res.send([header, ...rows].join('\n'));
 });
 
+// Diagnostics accept only metadata: never serialize request bodies or notes.
+app.post('/api/diag/sound', (req, res) => {
+  const { action, trigger, reason, mode, win, visible } = req.body || {};
+  const allowed = {
+    action: ['play', 'stop'],
+    trigger: ['unknown', 'timer-finished', 'pomodoro-waiting', 'pomodoro-auto'],
+    reason: ['unknown', 'ended', 'duration-limit', 'replaced', 'stop-button', 'ws-dismissed', 'ws-pomodoro-stopped', 'ws-started', 'ws-stopped', 'ws-pomodoro-phase', 'timer-toggle', 'timer-stop', 'pomodoro-next', 'pomodoro-skip', 'today-control'],
+    mode: ['loop', 'once', 'duration', 'once-auto'],
+    visible: ['visible', 'hidden', 'prerender'],
+  };
+  if (!allowed.action.includes(action)) return res.status(400).json({ error: 'Unknown sound action' });
+  logEvent(`sound:${action}`, {
+    trigger: allowed.trigger.includes(trigger) ? trigger : undefined,
+    reason: allowed.reason.includes(reason) ? reason : undefined,
+    mode: allowed.mode.includes(mode) ? mode : undefined,
+    win: typeof win === 'string' && /^[a-z0-9]{4,12}$/i.test(win) ? win : undefined,
+    kind: (req.headers['user-agent'] || '').includes('Electron') ? 'app-window' : 'browser',
+    visible: allowed.visible.includes(visible) ? visible : undefined,
+  });
+  res.json({ ok: true });
+});
+
+app.get('/api/diag/note', (req, res) => {
+  if (!['pc:sleep', 'pc:resume'].includes(req.query.event)) return res.status(400).json({ error: 'Unknown diagnostic event' });
+  logEvent(req.query.event);
+  res.json({ ok: true });
+});
+
 // ── App info ──────────────────────────────────────────────────────────────────
 
 app.get('/api/app/version', (req, res) => {
@@ -1133,5 +1387,10 @@ app.get('/api/app/version', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
+  let version = '?';
+  let alertMode;
+  try { version = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version; } catch (_) {}
+  try { alertMode = read(DATA.settings).alertSoundMode || 'loop'; } catch (_) {}
+  logEvent('app:started', { version, port: server.address().port, restoredTimers: timers.size, alertMode });
   console.log(`Time Tracker Pro running at http://localhost:${PORT}`);
 });

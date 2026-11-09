@@ -8,7 +8,7 @@ const App = (() => {
   let lastGoalTimerKey = '';
   let lastDashTimerKey = '';
   let lastDashSessions = [];
-  let breakdownDays = '30';
+  let todayJourneyPick = null;
   let focusCardDurations = new Map();
   let focusCardCustomEditing = new Map();
   let analyticsRange = { key: '14', customFrom: null, customTo: null };
@@ -41,10 +41,6 @@ const App = (() => {
 
   const fmtHours = Charts.fmtDur;
   const esc = Charts.esc;
-
-  function fmtHDecimal(secs) {
-    return `${Math.round(secs / 360) / 10}h`;
-  }
 
   function fmtDeadlineShort(iso) {
     return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -173,15 +169,6 @@ const App = (() => {
     return streak;
   }
 
-  // Plain facts about a lifetime goal: how much is left and the date, if any.
-  function lifetimeHint(c, totalSecs) {
-    if (!c.lifetimeTarget) return '';
-    const left = c.lifetimeTarget - totalSecs / 3600;
-    if (left <= 0) return 'Reached';
-    const hoursLeft = `${Math.round(left * 10) / 10}h left`;
-    return c.lifetimeDeadline ? `${hoursLeft} · ${fmtDeadlineShort(c.lifetimeDeadline)}` : hoursLeft;
-  }
-
   // ── Global sound UI (Goals header) ────────────────────────────────────────
   function updateGlobalSoundUI(soundName) {
     const strip    = document.querySelector('.global-sound-strip');
@@ -202,6 +189,7 @@ const App = (() => {
     document.getElementById('customDurationModal').hidden = true;
     document.getElementById('confirmDeleteModal').hidden  = true;
     document.getElementById('sessionModal').hidden        = true;
+    Trackers.closeAll();
   }
 
   function showDeleteConfirm(catName, sessionCount, timeStr) {
@@ -257,6 +245,7 @@ const App = (() => {
     if (name === 'log')       Logs.refresh();
     if (name === 'analytics') refreshAnalytics();
     if (name === 'goals')     renderGoals();
+    if (name === 'trackers')  Trackers.refresh();
     if (name === 'notes')     Notes.refresh();
     if (name === 'pomodoro')  Pomodoro.refresh();
     if (name === 'settings')  Settings.refresh();
@@ -320,13 +309,125 @@ const App = (() => {
         : '';
 
       lastDashSessions = sessions;
+      renderInProgress(Timer.getTimers());
       renderTodayTimeline(todaySessions);
       renderDashboardGoals(sessions);
-      Charts.renderWeekChart(sessions, categories);
-      renderCategoryBreakdown(sessions);
+      renderTodayJourney(sessions);
+      await Trackers.load();
+      renderComingUp();
     } catch (err) { console.error(err); }
   }
 
+  // The total-hours goal with the most recent activity, with chips to switch if there are several
+  function renderTodayJourney(sessions) {
+    const card = document.getElementById('todayJourney');
+    if (!card) return;
+    const goals = categories.filter(c => !c.archived && c.lifetimeTarget);
+    card.hidden = false;
+    if (!goals.length) {
+      card.innerHTML = `
+        <div class="card__head">
+          <h2 class="card__title journey__title"><i data-lucide="milestone"></i> Long-term goal journey</h2>
+        </div>
+        <div class="today-empty">
+          <p>Give a category a total, like 1,000 hours of Japanese. You'll see your pace, a finish date and milestones here.</p>
+          <button class="btn btn--ghost btn--sm" data-journey-goals><i data-lucide="plus"></i> Set a total-hours goal</button>
+        </div>`;
+      lucide.createIcons({ nodes: [card] });
+      return;
+    }
+
+    const lastActive = c => sessions.filter(s => s.categoryId === c.id).reduce((m, s) => (s.startTime > m ? s.startTime : m), '');
+    if (!goals.some(c => c.id === todayJourneyPick)) {
+      todayJourneyPick = [...goals].sort((a, b) => lastActive(b).localeCompare(lastActive(a)))[0].id;
+    }
+    const c = goals.find(g => g.id === todayJourneyPick);
+
+    const chips = goals.length > 1
+      ? `<div class="segmented segmented--sm" role="group" aria-label="Choose a goal">
+           ${goals.slice(0, 4).map(g => `<button class="segmented__btn${g.id === c.id ? ' is-active' : ''}" data-journey-pick="${g.id}" aria-pressed="${g.id === c.id}">${esc(g.name)}</button>`).join('')}
+         </div>`
+      : '';
+
+    card.innerHTML = `
+      <div class="card__head">
+        <h2 class="card__title journey__title"><i data-lucide="milestone"></i> Long-term goal journey</h2>
+        <div class="journey__head-tools">
+          ${chips}
+          <button class="link-btn" data-journey-goals>Goals <i data-lucide="arrow-up-right"></i></button>
+        </div>
+      </div>
+      ${Journey.cardHTML(c, sessions, { key: 'today', compact: true, label: true })}`;
+    lucide.createIcons({ nodes: [card] });
+    Journey.mount(card);
+  }
+
+  // "In progress": every running or paused timer, live, with Pause/Resume and Stop.
+  // Pomodoro has no pause (true to the technique), so its row only opens the Pomodoro screen.
+  function renderInProgress(timers) {
+    const card = document.getElementById('todayInProgress');
+    if (!card) return;
+    card.hidden = timers.length === 0;
+    if (!timers.length) { card.innerHTML = ''; return; }
+
+    const running = timers.filter(t => t.status === 'running').length;
+    const note = running ? `${running} running` : 'Paused';
+
+    card.innerHTML = `
+      <div class="card__head">
+        <h2 class="card__title">In progress</h2>
+        <span class="card__note">${note}</span>
+      </div>
+      <ul class="in-progress__list">
+        ${timers.map(t => {
+          const cat = t.categoryId !== '__none__' ? getCategoryById(t.categoryId) : null;
+          const isBreak = t.pomodoroPhase === 'short-break' || t.pomodoroPhase === 'long-break';
+          const name = isBreak ? 'Break' : (cat?.name ?? 'No category');
+          const kind = t.pomodoroPhase ? 'Pomodoro' : `${fmtHours(t.durationSeconds)} timer`;
+          const id = esc(t.categoryId);
+          const state = t.status === 'finished' ? 'Finished' : t.status === 'paused' ? 'Paused' : '';
+          let actions;
+          if (t.pomodoroPhase) {
+            actions = `<button class="btn btn--ghost" data-ip-pomodoro><i data-lucide="arrow-up-right"></i> Open Pomodoro</button>`;
+          } else {
+            const toggle = t.status === 'finished' ? '' : t.status === 'running'
+              ? `<button class="btn btn--ghost" data-ip-toggle="${id}"><i data-lucide="pause"></i> Pause</button>`
+              : `<button class="btn btn--ghost" data-ip-toggle="${id}"><i data-lucide="play"></i> Resume</button>`;
+            actions = `${toggle}<button class="btn btn--primary" data-ip-stop="${id}"><i data-lucide="square"></i> Stop</button>`;
+          }
+          return `
+            <li class="in-progress__row" data-ip-row="${id}">
+              <div class="in-progress__who">
+                <span class="in-progress__name">
+                  <span class="pulse-dot${t.status === 'running' ? '' : ' pulse-dot--static'}" style="--dot-color:${cat?.color ?? 'var(--text-muted)'}"></span>
+                  ${esc(name)}
+                </span>
+                <span class="in-progress__meta">${kind} · <span data-ip-done>${fmtHours(t.durationSeconds - t.remainingSeconds)}</span> done${state ? ` · ${state}` : ''}</span>
+              </div>
+              <div class="in-progress__clock" role="timer" aria-label="Time left" data-ip-clock>${Timer.fmtTime(t.remainingSeconds)}</div>
+              <div class="in-progress__actions">${actions}</div>
+            </li>`;
+        }).join('')}
+      </ul>`;
+    lucide.createIcons({ nodes: [card] });
+  }
+
+  // Every second: only the numbers change
+  function tickInProgress(timers) {
+    timers.forEach(t => {
+      const row = document.querySelector(`#todayInProgress [data-ip-row="${CSS.escape(t.categoryId)}"]`);
+      if (!row) return;
+      row.querySelector('[data-ip-clock]').textContent = Timer.fmtTime(t.remainingSeconds);
+      row.querySelector('[data-ip-done]').textContent = fmtHours(t.durationSeconds - t.remainingSeconds);
+    });
+  }
+
+  function renderComingUp() {
+    const card = document.getElementById('todayComingUp');
+    if (!card) return;
+    card.innerHTML = Trackers.comingUpHTML(3);
+    lucide.createIcons({ nodes: [card] });
+  }
   // A 24-hour strip of today: one block per session, placed at the time it happened.
   function renderTodayTimeline(todaySessions) {
     const container = document.getElementById('todayTimeline');
@@ -369,6 +470,7 @@ const App = (() => {
           ${blocks}
           <div class="daybar__now" style="left:${nowPct}%"></div>
         </div>
+        <span class="daybar__now-label" style="left:${nowPct}%" aria-hidden="true">Now</span>
         <div class="daybar__ticks" aria-hidden="true">
           <span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>12am</span>
         </div>
@@ -376,80 +478,99 @@ const App = (() => {
       <div class="chart-legend today__legend">${legend}</div>`;
   }
 
-  // One row per goal: where today stands, the recent run of periods, and a way to start.
+  // Recurring targets (2h a day, 14h a week): plain done/target, a thin bar and the streak
   function renderDashboardGoals(sessions) {
     const container = document.getElementById('dashboardGoals');
     if (!container) return;
 
-    const goals = categories.filter(c => !c.archived && (c.targetValue || c.lifetimeTarget));
-    if (goals.length === 0) { container.innerHTML = ''; return; }
+    // Total-hours goals have their own journey card
+    const goals = categories.filter(c => !c.archived && c.targetValue && c.targetPeriod);
+    container.hidden = false;
+
+    // "Nov 2–8": this week, Monday to Sunday
+    const wk = periodContaining('week', new Date());
+    const wkStart = new Date(wk.from + 'T12:00:00');
+    const wkEnd = new Date(wk.to + 'T12:00:00');
+    const md = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const range = wkStart.getMonth() === wkEnd.getMonth() ? `${md(wkStart)}–${wkEnd.getDate()}` : `${md(wkStart)}–${md(wkEnd)}`;
+    const head = `
+      <div class="card__head">
+        <h2 class="card__title">This week's goals</h2>
+        <span class="card__note">${range}</span>
+      </div>`;
+
+    if (goals.length === 0) {
+      container.innerHTML = `${head}
+        <div class="today-empty">
+          <p>Set a regular target, like 2 hours a day or 14 hours a week. Your progress and streaks show up here.</p>
+          <button class="btn btn--ghost btn--sm" data-dash-open><i data-lucide="plus"></i> Set a weekly target</button>
+        </div>`;
+      lucide.createIcons({ nodes: [container] });
+      return;
+    }
 
     const timers = Timer.getTimers();
 
-    container.innerHTML = `
-      <div class="card goal-board">
-        <div class="card__head">
-          <h2 class="card__title">Goals</h2>
-          <button class="link-btn" data-dash-open>All goals <i data-lucide="arrow-right"></i></button>
-        </div>
+    container.innerHTML = `${head}
+      <ul class="week-goals">
         ${goals.map(c => {
-          const totalSecs = sessions.filter(s => s.categoryId === c.id).reduce((sum, s) => sum + s.durationSeconds, 0);
-          const hasTarget = c.targetValue && c.targetPeriod;
-          const { from, to } = hasTarget ? getPeriodBounds(c.targetPeriod) : {};
-          const periodSecs = hasTarget ? secsInRange(sessions, c.id, from, to) : totalSecs;
-          const goalHours = hasTarget ? c.targetValue : c.lifetimeTarget;
-          const pct = Math.min(Math.round((periodSecs / (goalHours * 3600)) * 100), 100);
-          const streak = hasTarget ? computeStreak(c, sessions) : 0;
-          const meta = [
-            streak > 0 ? `${streak}-${getPeriodShortLabel(c.targetPeriod)} streak` : '',
-            c.lifetimeTarget ? `${fmtHDecimal(totalSecs)} of ${c.lifetimeTarget.toLocaleString('en-US')}h all time` : '',
-            lifetimeHint(c, totalSecs),
-          ].filter(Boolean).join(' · ');
-          const periodWord = hasTarget ? getPeriodLabel(c.targetPeriod).toLowerCase() : 'all time';
-          const busy = finishedTimerCats.has(c.id) || timers.some(t => t.categoryId === c.id);
-          const duration = focusCardDurations.get(c.id) || c.defaultDuration || 1800;
-
+          const { from, to } = getPeriodBounds(c.targetPeriod);
+          const periodSecs = secsInRange(sessions, c.id, from, to);
+          const pct = Math.min(Math.round((periodSecs / (c.targetValue * 3600)) * 100), 100);
+          const streak = computeStreak(c, sessions);
+          const running = timers.some(t => t.categoryId === c.id && t.status === 'running');
           return `
-            <div class="goal-row">
-              <div class="goal-row__main">
-                <div class="goal-row__name">
-                  <span class="breakdown-item__dot" style="background:${c.color}"></span>${esc(c.name)}
-                </div>
-                <div class="goal-row__amount">
-                  <strong>${fmtHours(periodSecs)}</strong> of ${goalHours.toLocaleString('en-US')}h ${periodWord}
-                </div>
-                <div class="goal-row__bar">
-                  <div class="goal-row__fill" style="width:${pct}%;background:${c.color}"></div>
-                </div>
-                ${meta ? `<div class="goal-row__meta">${meta}</div>` : ''}
+            <li class="week-goal">
+              <div class="week-goal__top">
+                <span class="goal-row__name"><span class="breakdown-item__dot" style="background:${c.color}"></span>${esc(c.name)}</span>
+                <span class="week-goal__streak">
+                  ${running ? '<span class="pulse-dot"></span> Running' : ''}
+                  ${!running && streak > 0 ? `<i data-lucide="repeat"></i> ${streak}-${getPeriodShortLabel(c.targetPeriod)} streak` : ''}
+                </span>
               </div>
-              ${hasTarget ? goalCellsHTML(c, sessions) : '<div></div>'}
-              ${busy
-                ? `<button class="btn btn--ghost btn--sm goal-row__action" data-dash-open><span class="pulse-dot"></span> In progress</button>`
-                : `<button class="btn btn--ghost btn--sm goal-row__action" data-dash-start="${c.id}" data-duration="${duration}" aria-label="Start ${fmtHours(duration)} timer for ${esc(c.name)}"><i data-lucide="play"></i> ${fmtHours(duration)}</button>`}
-            </div>`;
+              <div class="goal-row__amount"><strong>${fmtHours(periodSecs)}</strong> of ${fmtHours(c.targetValue * 3600)} ${getPeriodLabel(c.targetPeriod).toLowerCase()}</div>
+              <div class="goal-row__bar"><div class="goal-row__fill" style="width:${pct}%;background:${c.color}"></div></div>
+            </li>`;
         }).join('')}
-      </div>`;
+      </ul>`;
 
     lucide.createIcons({ nodes: [container] });
   }
 
   function bindDashboardControls() {
-    document.getElementById('dashboardGoals').addEventListener('click', async e => {
-      if (e.target.closest('[data-dash-open]')) { showScreen('goals'); return; }
-      const start = e.target.closest('[data-dash-start]');
-      if (!start) return;
-      start.disabled = true;
-      try { await API.timer.start({ duration: parseInt(start.dataset.duration), categoryId: start.dataset.dashStart }); }
-      catch (err) { console.error(err); start.disabled = false; }
+    document.getElementById('dashboardGoals').addEventListener('click', e => {
+      if (e.target.closest('[data-dash-open]')) showScreen('goals');
     });
 
-    document.getElementById('breakdownRange').addEventListener('click', e => {
-      const btn = e.target.closest('[data-days]');
-      if (!btn) return;
-      breakdownDays = btn.dataset.days;
-      document.querySelectorAll('#breakdownRange .segmented__btn').forEach(b => b.classList.toggle('is-active', b === btn));
-      renderCategoryBreakdown(lastDashSessions);
+    document.getElementById('todayJourney').addEventListener('click', e => {
+      if (e.target.closest('[data-journey-goals]')) { showScreen('goals'); return; }
+      const pick = e.target.closest('[data-journey-pick]');
+      if (!pick) return;
+      todayJourneyPick = pick.dataset.journeyPick;
+      renderTodayJourney(lastDashSessions);
+    });
+
+    Trackers.bindComingUp(document.getElementById('todayComingUp'));
+
+    document.getElementById('todayInProgress').addEventListener('click', async e => {
+      if (e.target.closest('[data-ip-pomodoro]')) { showScreen('pomodoro'); return; }
+      const toggle = e.target.closest('[data-ip-toggle]');
+      const stop = e.target.closest('[data-ip-stop]');
+      if (!toggle && !stop) return;
+      (toggle || stop).disabled = true;
+      AlertSound.stop('today-control');
+      try {
+        if (stop) {
+          await API.timer.stop(stop.dataset.ipStop);
+          refreshDashboard();
+          Logs.refresh();
+        } else {
+          const catId = toggle.dataset.ipToggle;
+          const t = Timer.getTimers().find(x => x.categoryId === catId && !x.pomodoroPhase);
+          if (t?.status === 'running') await API.timer.pause(catId);
+          else await API.timer.start({ categoryId: catId });
+        }
+      } catch (err) { console.error(err); (toggle || stop).disabled = false; }
     });
   }
 
@@ -479,24 +600,6 @@ const App = (() => {
           <div class="breakdown-bar__fill" style="width:${Math.round((c.secs / max) * 100)}%;background:${c.color}"></div>
         </div>
       </div>`).join('');
-  }
-
-  function renderCategoryBreakdown(sessions) {
-    const container = document.getElementById('categoryBreakdown');
-    if (!container) return;
-
-    let inRange = sessions;
-    if (breakdownDays !== 'all') {
-      const start = new Date();
-      start.setDate(start.getDate() - (parseInt(breakdownDays) - 1));
-      const fromStr = start.toLocaleDateString('sv');
-      inRange = sessions.filter(s => toLocalDate(s.startTime) >= fromStr);
-    }
-
-    const totals = categoryTotals(inRange);
-    container.innerHTML = totals.length
-      ? breakdownHTML(totals)
-      : `<p class="muted-note">Nothing tracked in this range.</p>`;
   }
 
   // ── Analytics ──────────────────────────────────────────────────────────────
@@ -713,7 +816,6 @@ const App = (() => {
 
     container.innerHTML = goals.map(c => {
       const rangeSecs = inRange.filter(s => s.categoryId === c.id).reduce((sum, s) => sum + s.durationSeconds, 0);
-      const allTimeSecs = sessions.filter(s => s.categoryId === c.id).reduce((sum, s) => sum + s.durationSeconds, 0);
 
       let reachedHTML = '';
       if (c.targetValue && c.targetPeriod) {
@@ -730,12 +832,12 @@ const App = (() => {
 
       let lifetimeHTML = '';
       if (c.lifetimeTarget) {
-        const pct = Math.min((allTimeSecs / 3600 / c.lifetimeTarget) * 100, 100);
+        const countedSecs = Journey.countedSecs(c, sessions);
+        const pct = Math.min((countedSecs / 3600 / c.lifetimeTarget) * 100, 100);
         lifetimeHTML = `
           <div class="goal-review__lifetime">
             <div class="goal-review__lifetime-row">
-              <span>${fmtHDecimal(allTimeSecs)} of ${c.lifetimeTarget.toLocaleString('en-US')}h all time</span>
-              <span>${lifetimeHint(c, allTimeSecs)}</span>
+              <span>${Journey.hint(c, sessions)}</span>
             </div>
             <div class="goal-row__bar"><div class="goal-row__fill" style="width:${pct}%;background:${c.color}"></div></div>
           </div>`;
@@ -851,6 +953,12 @@ const App = (() => {
                    value="${c.lifetimeTarget || ''}" data-lifetime-target="${c.id}" aria-label="Total hours goal" />
           </div>
           <div class="target-panel__field">
+            <label class="form-label">Count from <span class="form-label--optional">(optional)</span></label>
+            <input type="date" class="form-input form-input--sm"
+                   value="${c.lifetimeStart || ''}" data-lifetime-start="${c.id}" aria-label="Count hours from this date"
+                   title="Empty counts all your time. Set a date to start a fresh challenge." />
+          </div>
+          <div class="target-panel__field">
             <label class="form-label">By date <span class="form-label--optional">(optional)</span></label>
             <input type="date" class="form-input form-input--sm"
                    value="${c.lifetimeDeadline || ''}" data-lifetime-deadline="${c.id}" aria-label="Deadline" />
@@ -884,32 +992,24 @@ const App = (() => {
 
   // A category with a goal: progress first, then a way to start.
   function goalCardHTML(c, sessions, activeTimer, isExpanded) {
-    const totalSecs = sessions.filter(s => s.categoryId === c.id).reduce((sum, s) => sum + s.durationSeconds, 0);
     const hasTarget = c.targetValue && c.targetPeriod;
     const periodSecs = hasTarget
       ? (({ from, to }) => secsInRange(sessions, c.id, from, to))(getPeriodBounds(c.targetPeriod))
-      : totalSecs;
+      : Journey.countedSecs(c, sessions);
     const goalHours = hasTarget ? c.targetValue : c.lifetimeTarget;
     const pct = Math.min(Math.round((periodSecs / (goalHours * 3600)) * 100), 100);
     const streak = hasTarget ? computeStreak(c, sessions) : 0;
-    const periodWord = hasTarget ? getPeriodLabel(c.targetPeriod).toLowerCase() : 'all time';
+    const periodWord = hasTarget
+      ? getPeriodLabel(c.targetPeriod).toLowerCase()
+      : (c.lifetimeStart ? `since ${fmtDeadlineShort(c.lifetimeStart)}` : 'all time');
 
-    let lifetimeHTML = '';
-    if (hasTarget && c.lifetimeTarget) {
-      const lifetimePct = Math.min((totalSecs / 3600 / c.lifetimeTarget) * 100, 100);
-      lifetimeHTML = `
-        <div class="goal-card__lifetime">
-          <div class="goal-review__lifetime-row">
-            <span>${fmtHDecimal(totalSecs)} of ${c.lifetimeTarget.toLocaleString('en-US')}h all time</span>
-            <span>${lifetimeHint(c, totalSecs)}</span>
-          </div>
-          <div class="goal-row__bar"><div class="goal-row__fill" style="width:${lifetimePct}%;background:${c.color}"></div></div>
-        </div>`;
-    }
+    // Total-hours goal: pace, projected finish, milestones and chart
+    const lifetimeHTML = c.lifetimeTarget
+      ? `<div class="goal-card__lifetime">${Journey.cardHTML(c, sessions, { key: 'goals', showTotal: !!hasTarget })}</div>`
+      : '';
 
     const meta = [
       streak > 0 ? `${streak}-${getPeriodShortLabel(c.targetPeriod)} streak` : '',
-      !hasTarget ? lifetimeHint(c, totalSecs) : '',
     ].filter(Boolean).join(' · ');
 
     return `
@@ -1000,6 +1100,7 @@ const App = (() => {
       lastGoalTimerKey = timerStateKey(timers);
       container.innerHTML = `${goalsHTML}${othersHTML}`;
       lucide.createIcons();
+      Journey.mount(container);
       bindGoalsDragAndDrop();
 
       container.querySelectorAll('[data-edit]').forEach(btn => {
@@ -1088,7 +1189,7 @@ const App = (() => {
         const catId = clearBtn.dataset.targetClear;
         clearBtn.disabled = true;
         try {
-          const cleared = { targetValue: null, targetPeriod: null, lifetimeTarget: null, lifetimeDeadline: null };
+          const cleared = { targetValue: null, targetPeriod: null, lifetimeTarget: null, lifetimeDeadline: null, lifetimeStart: null };
           const updated = await API.categories.update(catId, cleared);
           categories = categories.map(c => c.id === catId ? { ...c, ...updated } : c);
           syncCategories();
@@ -1176,9 +1277,10 @@ const App = (() => {
         const targetPeriod   = targetValue ? (panel.querySelector(`[data-target-period="${catId}"]`)?.value || 'week') : null;
         const lifetimeTarget = parseInt(panel.querySelector(`[data-lifetime-target="${catId}"]`)?.value) || null;
         const lifetimeDeadline = panel.querySelector(`[data-lifetime-deadline="${catId}"]`)?.value || null;
+        const lifetimeStart    = panel.querySelector(`[data-lifetime-start="${catId}"]`)?.value || null;
         targetSaveBtn.disabled = true;
         try {
-          const updated = await API.categories.update(catId, { targetValue, targetPeriod, lifetimeTarget, lifetimeDeadline });
+          const updated = await API.categories.update(catId, { targetValue, targetPeriod, lifetimeTarget, lifetimeDeadline, lifetimeStart });
           categories = categories.map(c => c.id === catId ? { ...c, ...updated } : c);
           syncCategories();
           expandedTargetPanels.delete(catId);
@@ -1242,6 +1344,9 @@ const App = (() => {
       if (dashKey !== lastDashTimerKey) {
         lastDashTimerKey = dashKey;
         renderDashboardGoals(lastDashSessions);
+        renderInProgress(timers);
+      } else {
+        tickInProgress(timers);
       }
       return;
     }
@@ -1605,6 +1710,7 @@ const App = (() => {
     Settings.init();
     Notes.init();
     SessionForm.init();
+    Trackers.init();
     showScreen('dashboard');
     lucide.createIcons();
   }
@@ -1612,6 +1718,18 @@ const App = (() => {
   document.addEventListener('DOMContentLoaded', () => {
     init();
     setupUpdateNotifier();
+  });
+
+  // Entering a number box that already has a value selects it, so typing replaces the value
+  // instead of adding digits after it. Covers every number box, including ones built later.
+  document.addEventListener('focusin', e => {
+    const el = e.target;
+    if (!(el instanceof HTMLInputElement) || el.type !== 'number' || el.value === '') return;
+    el.select();
+    // A mouse click would put the cursor back at the click point on release; keep the selection
+    const keep = ev => ev.preventDefault();
+    el.addEventListener('mouseup', keep, { once: true });
+    el.addEventListener('blur', () => el.removeEventListener('mouseup', keep), { once: true });
   });
 
   function setupUpdateNotifier() {

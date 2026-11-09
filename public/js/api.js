@@ -54,6 +54,13 @@ const API = {
     update: (id, b) => API.put(`/api/notes/${id}`, b),
     delete: (id)    => API.del(`/api/notes/${id}`),
   },
+  trackers: {
+    list:   ()            => API.get('/api/trackers'),
+    create: (body)        => API.post('/api/trackers', body),
+    update: (id, b)       => API.put(`/api/trackers/${encodeURIComponent(id)}`, b),
+    delete: (id)          => API.del(`/api/trackers/${encodeURIComponent(id)}`),
+    act:    (id, action, extra = {}) => API.post(`/api/trackers/${encodeURIComponent(id)}/act`, { action, ...extra }),
+  },
   logs: {
     list:   (params) => API.get('/api/logs' + (params ? '?' + new URLSearchParams(params) : '')),
     create: (body)   => API.post('/api/logs', body),

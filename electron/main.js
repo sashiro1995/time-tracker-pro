@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, globalShortcut, shell, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, globalShortcut, shell, dialog, powerMonitor } = require('electron');
 const { classifyPort, killPort, portOwnerName } = require('./portCheck');
 const path = require('path');
 const net  = require('net');
@@ -92,9 +92,9 @@ function handleShortcut(action) {
     return;
   }
   const routes = {
-    startTimer: '/api/timer/toggle',
-    pauseTimer: '/api/timer/pause',
-    stopTimer:  '/api/timer/stop',
+    startTimer: '/api/timer/toggle?src=shortcut',
+    pauseTimer: '/api/timer/pause?src=shortcut',
+    stopTimer:  '/api/timer/stop?src=shortcut',
   };
   const route = routes[action];
   if (route) callAPI(route);
@@ -329,6 +329,8 @@ app.whenReady().then(async () => {
     createWindow();
     createTray();
     setupAutoUpdater();
+    powerMonitor.on('suspend', () => callAPI('/api/diag/note?event=pc:sleep'));
+    powerMonitor.on('resume', () => callAPI('/api/diag/note?event=pc:resume'));
 
     // Apply saved settings
     const settings = readSettings();

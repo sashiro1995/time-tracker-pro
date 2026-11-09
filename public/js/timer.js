@@ -28,9 +28,14 @@ const Timer = (() => {
 
   // ── WebSocket ──────────────────────────────────────────────────────────────
   function connectWS() {
-    ws = new WebSocket(`ws://${location.host}`);
+    ws = new WebSocket(`ws://${location.host}?win=${AlertSound.windowId}`);
     ws.addEventListener('message', e => {
       const msg = JSON.parse(e.data);
+
+      if (msg.type === 'trackers:updated') {
+        if (typeof Trackers !== 'undefined') Trackers.handleUpdate();
+        return;
+      }
 
       if (msg.type.startsWith('stopwatch:')) {
         Stopwatch.handleWS(msg);
@@ -38,14 +43,14 @@ const Timer = (() => {
       }
 
       if (msg.type === 'timer:dismissed') {
-        AlertSound.stop();
+        AlertSound.stop('ws-dismissed');
         if (msg.categoryId) App.clearTimerFinished(msg.categoryId);
         return;
       }
 
       if (msg.type === 'timer:pomodoro-phase') {
         const wasActive = isPomodoroActive();
-        if (msg.auto) AlertSound.playOnce();
+        if (msg.auto) AlertSound.playOnce('pomodoro-auto');
         if (typeof Pomodoro !== 'undefined') Pomodoro.handleWS(msg);
         if (msg.timers !== undefined) applyTimers(msg.timers, getSelectedCatId());
         if (!wasActive) App.showScreen('pomodoro');
@@ -58,7 +63,7 @@ const Timer = (() => {
       }
 
       if (msg.type === 'timer:pomodoro-stopped') {
-        AlertSound.stop();
+        AlertSound.stop('ws-pomodoro-stopped');
         if (typeof Pomodoro !== 'undefined') Pomodoro.handleWS(msg);
         if (msg.timers !== undefined) applyTimers(msg.timers, getSelectedCatId());
         App.refreshDashboard();
@@ -76,15 +81,15 @@ const Timer = (() => {
 
       if (msg.type === 'timer:finished') {
         if (!isPomodoroActive()) {
-          AlertSound.play();
+          AlertSound.play('timer-finished');
           if (msg.session?.categoryId) App.markTimerFinished(msg.session.categoryId);
         }
         App.refreshDashboard();
         Logs.refresh();
       } else if (msg.type === 'timer:started') {
-        if (!isPomodoroActive()) AlertSound.stop();
+        if (!isPomodoroActive()) AlertSound.stop('ws-started');
       } else if (msg.type === 'timer:stopped') {
-        AlertSound.stop();
+        AlertSound.stop('ws-stopped');
         App.refreshDashboard();
         Logs.refresh();
         if (msg.session?.categoryId) App.clearTimerFinished(msg.session.categoryId);
@@ -299,6 +304,8 @@ const Timer = (() => {
         const val = btn.dataset.seconds;
         if (val === 'custom') {
           document.getElementById('customDurationModal').hidden = false;
+          // Start in Minutes with its value selected, so typing replaces it
+          document.getElementById('customMinutes').focus();
           return;
         }
         selectedDuration = parseInt(val);
@@ -334,7 +341,7 @@ const Timer = (() => {
   // ── Control buttons ───────────────────────────────────────────────────────
   function bindControls() {
     document.getElementById('btnTimerToggle').addEventListener('click', async () => {
-      AlertSound.stop();
+      AlertSound.stop('timer-toggle');
       const catId  = getSelectedCatId();
       const active = getTimerForCat(catId);
 
@@ -354,7 +361,7 @@ const Timer = (() => {
     });
 
     document.getElementById('btnTimerStop').addEventListener('click', async () => {
-      AlertSound.stop();
+      AlertSound.stop('timer-stop');
       const catId = getSelectedCatId();
       try {
         await API.get(`/api/timer/stop?category=${encodeURIComponent(catId)}`);
